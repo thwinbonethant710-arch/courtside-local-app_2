@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
@@ -6,8 +6,9 @@ import {
 import {
   LayoutDashboard, Package, Truck, BarChart3, Settings as SettingsIcon,
   Plus, Trash2, Search, AlertTriangle, Check,
-  ChevronRight, RotateCcw, ArrowLeft,
+  ChevronRight, RotateCcw, ArrowLeft, Cloud, CloudOff,
 } from "lucide-react";
+import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
 
 /* ============================== DESIGN TOKENS ============================== */
 const C = {
@@ -340,6 +341,38 @@ function migrateV1Product(old, oldSettings, settings) {
   };
 }
 
+// Reads whatever's in this browser's local storage (v2, or v1 as a fallback) —
+// used both as the offline data source and as a one-time upload into Supabase
+// the first time cloud sync is connected, so nothing already entered is lost.
+function loadFromLocalStorage(baseSettings) {
+  let s = baseSettings;
+  let p = null;
+  let o = null;
+  try {
+    const sraw = localStorage.getItem("courtside_settings_v2");
+    if (sraw) s = { ...baseSettings, ...JSON.parse(sraw) };
+  } catch (e) { /* keep defaults */ }
+  try {
+    const praw = localStorage.getItem("courtside_products_v2");
+    if (praw) p = JSON.parse(praw);
+  } catch (e) { /* none */ }
+  try {
+    const oraw = localStorage.getItem("courtside_orders_v2");
+    if (oraw) o = JSON.parse(oraw);
+  } catch (e) { /* none */ }
+
+  if (p === null) {
+    try {
+      const v1raw = localStorage.getItem("bball_products_v1");
+      const v1settingsRaw = localStorage.getItem("bball_settings_v1");
+      const oldSettings = v1settingsRaw ? JSON.parse(v1settingsRaw) : null;
+      const v1products = v1raw ? JSON.parse(v1raw) : [];
+      p = v1products.map((old) => migrateV1Product(old, oldSettings, s));
+    } catch (e) { p = []; }
+  }
+  return { products: p || [], orders: o || [], settings: s };
+}
+
 /* ============================== SMALL UI PRIMITIVES ============================== */
 const Card = ({ children, className = "", style = {}, padded = true }) => (
   <div className={`rounded-md ${padded ? "p-4 sm:p-5" : ""} ${className}`} style={{ background: C.surface, border: `1px solid ${C.line}`, ...style }}>
@@ -484,16 +517,27 @@ const NAV_ITEMS = [
   { id: "settings", label: "Settings", icon: SettingsIcon },
 ];
 
-function Nav({ page, goTo, onAdd }) {
+function Nav({ page, goTo, onAdd, syncStatus }) {
+  const syncMeta = {
+    synced: { icon: Cloud, color: C.green, label: "Synced" },
+    syncing: { icon: Cloud, color: C.amber, label: "Syncing…" },
+    error: { icon: CloudOff, color: C.red, label: "Sync error" },
+    offline: { icon: CloudOff, color: C.mutedFaint, label: "This device only" },
+  }[syncStatus] || { icon: Cloud, color: C.mutedFaint, label: "" };
+  const SyncIcon = syncMeta.icon;
+
   return (
     <>
       <aside className="hidden lg:flex flex-col w-60 shrink-0 h-screen sticky top-0 px-4 py-6" style={{ background: C.surface, borderRight: `1px solid ${C.line}` }}>
-        <div className="flex items-center gap-2.5 px-2 mb-8">
+        <div className="flex items-center gap-2.5 px-2 mb-2">
           <BasketballMark size={26} />
           <div>
             <div className="text-lg font-semibold leading-none" style={{ color: C.text, fontFamily: FONT_DISPLAY, letterSpacing: "0.02em" }}>COURTSIDE</div>
             <div className="text-xs uppercase tracking-widest" style={{ color: C.muted }}>Resale Ops</div>
           </div>
+        </div>
+        <div className="flex items-center gap-1.5 px-2 mb-6 text-xs" style={{ color: syncMeta.color }}>
+          <SyncIcon size={12} /> {syncMeta.label}
         </div>
         <nav className="flex flex-col gap-1">
           {NAV_ITEMS.map((item) => {
@@ -1397,57 +1441,134 @@ export default function App() {
   const [isNewProduct, setIsNewProduct] = useState(false);
   const [isNewOrder, setIsNewOrder] = useState(false);
   const [toast, setToast] = useState("");
-  const [storageOk, setStorageOk] = useState(true);
+  // 'synced' | 'syncing' | 'error' | 'offline' (offline = Supabase not configured, using this browser only)
+  const [syncStatus, setSyncStatus] = useState(isSupabaseConfigured ? "syncing" : "offline");
 
+  // ---- Initial load: cloud if configured, this browser's storage otherwise ----
   useEffect(() => {
-    let s = DEFAULT_SETTINGS;
-    let p = null;
-    let o = null;
-    try {
-      const sraw = localStorage.getItem("courtside_settings_v2");
-      if (sraw) s = { ...DEFAULT_SETTINGS, ...JSON.parse(sraw) };
-    } catch (e) { /* keep defaults */ }
-    try {
-      const praw = localStorage.getItem("courtside_products_v2");
-      if (praw) p = JSON.parse(praw);
-    } catch (e) { /* none */ }
-    try {
-      const oraw = localStorage.getItem("courtside_orders_v2");
-      if (oraw) o = JSON.parse(oraw);
-    } catch (e) { /* none */ }
+    (async () => {
+      if (!isSupabaseConfigured) {
+        const { products: p, orders: o, settings: s } = loadFromLocalStorage(DEFAULT_SETTINGS);
+        setSettingsState(s);
+        setProducts(p);
+        setOrders(o);
+        try { if (!localStorage.getItem("courtside_products_v2")) localStorage.setItem("courtside_products_v2", JSON.stringify(p)); } catch (e) { /* ignore */ }
+        setLoading(false);
+        return;
+      }
 
-    if (p === null) {
-      // No v2 data yet — try migrating v1 data so nothing is lost.
       try {
-        const v1raw = localStorage.getItem("bball_products_v1");
-        const v1settingsRaw = localStorage.getItem("bball_settings_v1");
-        const oldSettings = v1settingsRaw ? JSON.parse(v1settingsRaw) : null;
-        const v1products = v1raw ? JSON.parse(v1raw) : [];
-        p = v1products.map((old) => migrateV1Product(old, oldSettings, s));
-      } catch (e) { p = []; }
-    }
+        const [prodRes, orderRes, settingsRes] = await Promise.all([
+          supabase.from("products").select("*"),
+          supabase.from("orders").select("*"),
+          supabase.from("settings").select("*").eq("id", "singleton").maybeSingle(),
+        ]);
+        if (prodRes.error) throw prodRes.error;
+        if (orderRes.error) throw orderRes.error;
+        if (settingsRes.error) throw settingsRes.error;
 
-    setSettingsState(s);
-    setProducts(p || []);
-    setOrders(o || []);
-    try {
-      if (!localStorage.getItem("courtside_products_v2")) localStorage.setItem("courtside_products_v2", JSON.stringify(p || []));
-    } catch (e) { setStorageOk(false); }
-    setLoading(false);
+        let p = (prodRes.data || []).map((r) => r.data);
+        let o = (orderRes.data || []).map((r) => r.data);
+        let s = settingsRes.data ? { ...DEFAULT_SETTINGS, ...settingsRes.data.data } : DEFAULT_SETTINGS;
+
+        // Cloud is empty — this is likely the first connect. Upload whatever's
+        // already sitting in this browser's local storage so nothing is lost.
+        if (p.length === 0 && o.length === 0 && !settingsRes.data) {
+          const local = loadFromLocalStorage(s);
+          p = local.products; o = local.orders; s = local.settings;
+          const now = new Date().toISOString();
+          if (p.length) await supabase.from("products").upsert(p.map((x) => ({ id: x.id, data: x, updated_at: now })));
+          if (o.length) await supabase.from("orders").upsert(o.map((x) => ({ id: x.id, data: x, updated_at: now })));
+          await supabase.from("settings").upsert({ id: "singleton", data: s, updated_at: now });
+        }
+
+        setSettingsState(s);
+        setProducts(p);
+        setOrders(o);
+        setSyncStatus("synced");
+      } catch (e) {
+        // Cloud load failed (bad keys, table not created yet, offline, etc.) —
+        // fall back to this browser's local copy so the app still works.
+        const { products: p, orders: o, settings: s } = loadFromLocalStorage(DEFAULT_SETTINGS);
+        setSettingsState(s);
+        setProducts(p);
+        setOrders(o);
+        setSyncStatus("error");
+      }
+      setLoading(false);
+    })();
   }, []);
 
-  const persistProducts = useCallback((next) => {
+  // ---- Live sync: reflect changes made from any other device/tab ----
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    const refetch = async (table, setter) => {
+      const { data, error } = await supabase.from(table).select("*");
+      if (!error && data) setter(data.map((r) => r.data));
+    };
+    const channel = supabase
+      .channel("courtside-live-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => refetch("products", setProducts))
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => refetch("orders", setOrders))
+      .on("postgres_changes", { event: "*", schema: "public", table: "settings" }, async () => {
+        const { data, error } = await supabase.from("settings").select("*").eq("id", "singleton").maybeSingle();
+        if (!error && data) setSettingsState({ ...DEFAULT_SETTINGS, ...data.data });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const persistProducts = (next) => {
+    const removedIds = products.filter((p) => !next.some((x) => x.id === p.id)).map((p) => p.id);
     setProducts(next);
-    try { localStorage.setItem("courtside_products_v2", JSON.stringify(next)); } catch (e) { setStorageOk(false); }
-  }, []);
-  const persistOrders = useCallback((next) => {
+    if (!isSupabaseConfigured) {
+      try { localStorage.setItem("courtside_products_v2", JSON.stringify(next)); } catch (e) { setSyncStatus("error"); }
+      return;
+    }
+    (async () => {
+      try {
+        setSyncStatus("syncing");
+        const now = new Date().toISOString();
+        if (next.length) { const { error } = await supabase.from("products").upsert(next.map((p) => ({ id: p.id, data: p, updated_at: now }))); if (error) throw error; }
+        if (removedIds.length) { const { error } = await supabase.from("products").delete().in("id", removedIds); if (error) throw error; }
+        setSyncStatus("synced");
+      } catch (e) { setSyncStatus("error"); }
+    })();
+  };
+
+  const persistOrders = (next) => {
+    const removedIds = orders.filter((o) => !next.some((x) => x.id === o.id)).map((o) => o.id);
     setOrders(next);
-    try { localStorage.setItem("courtside_orders_v2", JSON.stringify(next)); } catch (e) { setStorageOk(false); }
-  }, []);
-  const persistSettings = useCallback((next) => {
+    if (!isSupabaseConfigured) {
+      try { localStorage.setItem("courtside_orders_v2", JSON.stringify(next)); } catch (e) { setSyncStatus("error"); }
+      return;
+    }
+    (async () => {
+      try {
+        setSyncStatus("syncing");
+        const now = new Date().toISOString();
+        if (next.length) { const { error } = await supabase.from("orders").upsert(next.map((o) => ({ id: o.id, data: o, updated_at: now }))); if (error) throw error; }
+        if (removedIds.length) { const { error } = await supabase.from("orders").delete().in("id", removedIds); if (error) throw error; }
+        setSyncStatus("synced");
+      } catch (e) { setSyncStatus("error"); }
+    })();
+  };
+
+  const persistSettings = (next) => {
     setSettingsState(next);
-    try { localStorage.setItem("courtside_settings_v2", JSON.stringify(next)); } catch (e) { setStorageOk(false); }
-  }, []);
+    if (!isSupabaseConfigured) {
+      try { localStorage.setItem("courtside_settings_v2", JSON.stringify(next)); } catch (e) { setSyncStatus("error"); }
+      return;
+    }
+    (async () => {
+      try {
+        setSyncStatus("syncing");
+        const { error } = await supabase.from("settings").upsert({ id: "singleton", data: next, updated_at: new Date().toISOString() });
+        if (error) throw error;
+        setSyncStatus("synced");
+      } catch (e) { setSyncStatus("error"); }
+    })();
+  };
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2200); };
   const goTo = (p) => setPage(p);
@@ -1546,12 +1667,17 @@ export default function App() {
         * { scrollbar-width: thin; scrollbar-color: ${C.lineStrong} transparent; }
       `}</style>
 
-      <Nav page={page} goTo={goTo} onAdd={openAddChoice} />
+      <Nav page={page} goTo={goTo} onAdd={openAddChoice} syncStatus={syncStatus} />
 
       <main className="flex-1 min-w-0 px-4 py-6 sm:px-6 sm:py-8 pb-24 lg:pb-8" style={{ maxWidth: 1400 }}>
-        {!storageOk && (
-          <div className="mb-4 px-3 py-2 rounded-md text-xs" style={{ background: `${C.amber}14`, border: `1px solid ${C.amber}55`, color: C.amber }}>
-            Changes couldn't be saved to persistent storage — data will reset if you reload.
+        {syncStatus === "offline" && (
+          <div className="mb-4 px-3 py-2 rounded-md text-xs flex items-center gap-2" style={{ background: `${C.amber}14`, border: `1px solid ${C.amber}55`, color: C.amber }}>
+            <CloudOff size={14} /> Not connected to a cloud database — changes are only saved on this device/browser. See README.md to connect Supabase.
+          </div>
+        )}
+        {syncStatus === "error" && (
+          <div className="mb-4 px-3 py-2 rounded-md text-xs flex items-center gap-2" style={{ background: `${C.red}14`, border: `1px solid ${C.red}55`, color: C.red }}>
+            <CloudOff size={14} /> Couldn't reach the cloud database — showing this device's last-known data. Changes here may not sync until connection is restored.
           </div>
         )}
 
