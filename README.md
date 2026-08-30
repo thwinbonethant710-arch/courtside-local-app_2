@@ -1,18 +1,39 @@
-# Courtside — Basketball Reselling Business Dashboard
+# Hoop Corner — Basketball Store Dashboard
 
-A Shopify-style admin dashboard for a Dewu/Poizon → Myanmar basketball
-resale/pre-order business: a **Product Catalog** for research/pricing (GenZ,
-AG Sea, AG Air, Marlar Air, and CX logistics, each fully editable, plus a
-side-by-side logistics comparison per product), a separate **Orders** page
-with a 14-stage status tracker, supplier and packaging selection per order,
+A Shopify-style admin dashboard for Hoop Corner's Dewu/Poizon → Myanmar
+basketball resale/pre-order business: a **Product Catalog** for
+research/pricing (Cat China Land/Air, Golden City, DeQuick Normal/Premium,
+AG Sea/Flight, GenZ, Marlar, and CX — each with its own exact weight-charging
+rule, fully editable, plus a side-by-side logistics comparison per product), a
+separate **Orders** page with a 14-stage status tracker, supplier and
+packaging selection per order, a **Socials** page for your platform links,
 and an **Analytics**/**Settings** page tying it all together. Nothing is
-hardcoded — exchange rates, per-carrier rates, payment fee %, marketing %,
-target margin %, packaging options, and suppliers all live in Settings.
+hardcoded — exchange rates, per-carrier rates and rounding rules, payment fee
+%, marketing %, target margin %, packaging options, and suppliers all live in
+Settings, and you can add new logistics providers from there too.
 
 Marketing cost is calculated as a percentage of *final profit* (after
 marketing is itself deducted) — the circular formula is solved mathematically.
 Suggested selling price and break-even price are derived the same way,
 accounting for payment fees.
+
+## Organizing a big catalog
+
+- **Status**: Researching, Active, Paused, Archived, Posted, Planning to Post.
+- **Group name** + **color tag**: your own freeform grouping (e.g. a drop or
+  batch), shown as a colored stripe on each card and sortable — pick "Sort:
+  Group name" on the Products page to cluster everything into labeled
+  sections instead of one long list.
+- **Posted to**: toggle Instagram/TikTok/Facebook/Messenger/FB Manager
+  directly from a product's card in the catalog (no need to open it), or from
+  the product page. Filter the catalog by platform, or by "not posted
+  anywhere" to see what's still queued.
+
+## Socials
+
+The Socials page holds your five platform links — paste each URL once and
+the icon button opens it directly. The logo in the sidebar links straight to
+this page.
 
 ## Cloud sync (Supabase)
 
@@ -61,7 +82,7 @@ explaining that changes aren't syncing.
 You need [Node.js](https://nodejs.org) 18+ installed.
 
 ```bash
-cd courtside
+cd hoop-corner
 npm install
 npm run dev
 ```
@@ -84,9 +105,11 @@ deploys automatically from your repo.
 
 ## Notes
 
-- Product images need a URL you paste in — there's no image upload/hosting.
-- All rates, packaging options, and suppliers live in Settings — edit them
-  any time, no code changes needed.
+- Product images still need a URL you paste in — there's no image upload,
+  but the logo/banner images are already bundled in `public/`.
+- All logistics providers, rates, packaging options, and suppliers live in
+  Settings — edit them any time, no code changes needed.
 - If you're upgrading from an older version of this app, your existing data
   (local, or already-connected Supabase) is migrated automatically — nothing
-  is deleted.
+  is deleted, including old logistics numbers, which get mapped onto the new
+  per-provider rules.

@@ -6,7 +6,7 @@ import {
 import {
   LayoutDashboard, Package, Truck, BarChart3, Settings as SettingsIcon,
   Plus, Trash2, Search, AlertTriangle, Check,
-  ChevronRight, RotateCcw, ArrowLeft, Cloud, CloudOff,
+  ChevronRight, RotateCcw, ArrowLeft, Cloud, CloudOff, Share2, ExternalLink,
 } from "lucide-react";
 import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
 
@@ -33,38 +33,128 @@ const FONT_MONO = "'IBM Plex Mono', 'Courier New', monospace";
 
 /* ============================== CONSTANTS ============================== */
 const CATEGORIES = ["Shoes", "Jerseys", "Shirts", "Shorts", "Backpacks", "Clothing", "Accessories", "Other"];
-const PRODUCT_STATUSES = ["Researching", "Active", "Paused", "Archived"];
+const PRODUCT_STATUSES = ["Researching", "Active", "Paused", "Archived", "Posted", "Planning to Post"];
 
-const LOGISTICS_METHODS = [
+const SOCIAL_PLATFORMS = [
+  { id: "instagram", label: "Instagram" },
+  { id: "tiktok", label: "TikTok" },
+  { id: "facebook", label: "Facebook" },
+  { id: "messenger", label: "Messenger" },
+  { id: "facebookManager", label: "FB Manager" },
+];
+
+// Logistics methods are now data — stored in settings.logisticsMethods — so every
+// field (including the weight-rounding rule itself) is editable, and new providers
+// can be added from Settings without touching code.
+const DEFAULT_LOGISTICS_METHODS = [
   {
-    id: "genz", label: "GenZ Cargo", sub: "Land — China → Ruili → Yangon",
-    goodFor: "Bags, jerseys, shirts, shorts, clothing, soft goods.",
-    warn: "Avoid for shoes — shoebox/handling risk on this route.",
-    fieldSet: "genz",
+    id: "cat-land", label: "Cat China — Land", type: "Land / Road", deliveryTime: "60+ days",
+    primaryRateLabel: "China → Mandalay", primaryRateCurrency: "MMK",
+    weightRuleKind: "exact", weightRuleNote: "Exact actual weight — never rounded.",
+    minCharge: { enabled: true, thresholdKg: 1, flatAmount: 15000, currency: "MMK" },
+    hasSecondaryLeg: true, secondaryLegLabel: "Mandalay → Yangon", secondaryIsFlat: false, secondaryRateCurrency: "MMK",
+    supportsCbm: false, supportsPerItem: false, supportsVolumetric: false,
+    bracketTable: [],
+    defaults: { ratePerKg: 25000, secondaryRatePerKg: 6000, homeDeliveryMMK: 0 },
   },
   {
-    id: "agsea", label: "AG Sea", sub: "~40–50 days · batched shipments",
-    goodFor: "Larger orders — best value once you have 20–50kg to ship together.",
-    warn: "Slowest option; cargo-loss risk on very small shipments.",
-    fieldSet: "sea",
+    id: "cat-air", label: "Cat China — Air", type: "Air / Hand Carry", deliveryTime: "Not confirmed yet",
+    primaryRateLabel: "Rate", primaryRateCurrency: "RMB",
+    weightRuleKind: "exact", weightRuleNote: "Under 1kg is a flat ¥120 total; 1kg+ is exact weight × rate — never rounded.",
+    minCharge: { enabled: true, thresholdKg: 1, flatAmount: 120, currency: "RMB" },
+    hasSecondaryLeg: false,
+    supportsCbm: false, supportsPerItem: false, supportsVolumetric: false,
+    bracketTable: [],
+    defaults: { ratePerKg: 140, homeDeliveryMMK: 6000 },
   },
   {
-    id: "agair", label: "AG Air / Flight", sub: "~3–7 days",
-    goodFor: "Faster turnaround when the margin supports it.",
-    warn: "",
-    fieldSet: "std",
+    id: "golden-city-air", label: "Golden City — Air", type: "Air", deliveryTime: "3–5 days (COD)",
+    primaryRateLabel: "Rate", primaryRateCurrency: "RMB",
+    weightRuleKind: "bracket", weightRuleNote: "Rounded up to the next whole kg using the bracket table below.",
+    minCharge: { enabled: false },
+    hasSecondaryLeg: false,
+    supportsCbm: false, supportsPerItem: false, supportsVolumetric: false,
+    bracketTable: [
+      { upTo: 1, chargeAs: 1 }, { upTo: 2, chargeAs: 2 }, { upTo: 3, chargeAs: 3 },
+      { upTo: 4, chargeAs: 4 }, { upTo: 5, chargeAs: 5 },
+    ],
+    defaults: { ratePerKg: 130, homeDeliveryMMK: 0 },
   },
   {
-    id: "marlar", label: "Marlar Air / Hand Carry", sub: "~3–5 days",
-    goodFor: "Branded shoes, bags, and clothing.",
-    warn: "",
-    fieldSet: "std",
+    id: "dequick-normal", label: "DeQuick — Normal", type: "Land / Road", deliveryTime: "2–4 weeks",
+    primaryRateLabel: "Rate", primaryRateCurrency: "RMB",
+    weightRuleKind: "exact", weightRuleNote: "Weight rule not confirmed by the provider yet — enter the chargeable weight they quote you directly, no rounding applied.",
+    minCharge: { enabled: false },
+    hasSecondaryLeg: true, secondaryLegLabel: "Kyaungtone → Yangon", secondaryIsFlat: true, secondaryRateCurrency: "MMK",
+    supportsCbm: false, supportsPerItem: true, perItemLabel: "Branded goods — ¥ per item (not weight-based)", perItemRateCurrency: "RMB",
+    supportsVolumetric: false,
+    bracketTable: [],
+    defaults: { ratePerKg: 10, itemRate: 100, secondaryFlatMMK: 20000, homeDeliveryMMK: 0 },
   },
   {
-    id: "cx", label: "CX Logistics", sub: "~3–7 days · tiered pricing",
-    goodFor: "Branded items — rate drops noticeably above ~10kg.",
-    warn: "Rate is tiered by weight — adjust the ¥/kg field for larger shipments.",
-    fieldSet: "std",
+    id: "dequick-premium", label: "DeQuick — Premium", type: "Land / Road", deliveryTime: "7–10 days",
+    primaryRateLabel: "Rate", primaryRateCurrency: "RMB",
+    weightRuleKind: "exact", weightRuleNote: "Use the provider's quoted chargeable weight — no rounding rule invented.",
+    minCharge: { enabled: false },
+    hasSecondaryLeg: true, secondaryLegLabel: "Kyaungtone → Yangon", secondaryIsFlat: true, secondaryRateCurrency: "MMK",
+    supportsCbm: false, supportsPerItem: false, supportsVolumetric: false,
+    bracketTable: [],
+    defaults: { ratePerKg: 15, secondaryFlatMMK: 20000, homeDeliveryMMK: 0 },
+  },
+  {
+    id: "ag-sea", label: "AG — Sea", type: "Sea Cargo", deliveryTime: "40–50 days",
+    primaryRateLabel: "Rate", primaryRateCurrency: "RMB",
+    weightRuleKind: "exact", weightRuleNote: "Use the actual quoted shipment weight — no rounding unless the provider gives one.",
+    minCharge: { enabled: false },
+    hasSecondaryLeg: false,
+    supportsCbm: true, cbmPriceLabel: "CBM price", supportsPerItem: false, supportsVolumetric: false,
+    bracketTable: [],
+    defaults: { ratePerKg: 22, cbmPriceRmb: 6600, homeDeliveryMMK: 0 },
+  },
+  {
+    id: "ag-flight", label: "AG — Flight", type: "Air / Hand Carry", deliveryTime: "3–7 days",
+    primaryRateLabel: "Rate (¥145–¥200/kg)", primaryRateCurrency: "RMB",
+    weightRuleKind: "exact", weightRuleNote: "Exact actual weight — never rounded.",
+    minCharge: { enabled: false },
+    hasSecondaryLeg: false,
+    supportsCbm: false, supportsPerItem: false, supportsVolumetric: false,
+    bracketTable: [],
+    defaults: { ratePerKg: 170, homeDeliveryMMK: 20000 },
+  },
+  {
+    id: "genz", label: "GenZ Cargo", type: "Land / Road", deliveryTime: "3–4 weeks",
+    primaryRateLabel: "China → Ruili", primaryRateCurrency: "RMB",
+    weightRuleKind: "exact", weightRuleNote: "Actual/quoted chargeable weight — never rounded.",
+    minCharge: { enabled: false },
+    hasSecondaryLeg: true, secondaryLegLabel: "Ruili → Yangon (variable)", secondaryIsFlat: true, secondaryRateCurrency: "MMK",
+    supportsCbm: false, supportsPerItem: false, supportsVolumetric: false,
+    bracketTable: [],
+    defaults: { ratePerKg: 8, secondaryFlatMMK: 20000, homeDeliveryMMK: 12500 },
+  },
+  {
+    id: "marlar-air", label: "Marlar — Air", type: "Air / Hand Carry", deliveryTime: "3–5 days",
+    primaryRateLabel: "Rate (¥100–¥120/kg)", primaryRateCurrency: "RMB",
+    weightRuleKind: "bracket", weightRuleNote: "Half-kg charging brackets below. Volumetric weight (L×W×H÷5000) is used instead if it's greater.",
+    minCharge: { enabled: false },
+    hasSecondaryLeg: false,
+    supportsCbm: false, supportsPerItem: false, supportsVolumetric: true,
+    bracketTable: [
+      { upTo: 0.5, chargeAs: 0.5 }, { upTo: 0.9, chargeAs: 1.0 }, { upTo: 1.2, chargeAs: 1.0 },
+      { upTo: 1.6, chargeAs: 1.5 }, { upTo: 1.9, chargeAs: 2.0 }, { upTo: 2.2, chargeAs: 2.0 },
+      { upTo: 2.6, chargeAs: 2.5 }, { upTo: 2.9, chargeAs: 3.0 },
+    ],
+    defaults: { ratePerKg: 110, homeDeliveryMMK: 0 },
+  },
+  {
+    id: "cx-air", label: "CX — Air", type: "Air", deliveryTime: "3–7 days",
+    primaryRateLabel: "Rate", primaryRateCurrency: "RMB",
+    weightRuleKind: "exact", weightRuleNote: "Use the provider's quoted chargeable weight — no rounding rule invented.",
+    minCharge: { enabled: false },
+    hasSecondaryLeg: false,
+    supportsCbm: false, supportsPerItem: false, supportsVolumetric: false,
+    bracketTable: [],
+    tierOptions: [{ label: "1kg tier", ratePerKg: 200 }, { label: "10kg tier", ratePerKg: 145 }],
+    defaults: { ratePerKg: 200, homeDeliveryMMK: 0 },
   },
 ];
 
@@ -93,13 +183,7 @@ const CUSTOMER_SHIPPING_OPTIONS = ["Air", "Land (GenZ)", "Sea"];
 
 const DEFAULT_SETTINGS = {
   rmbRate: 654,
-  genzRate: 8,
-  genzRuiliToYangonDefault: 20000,
-  agSeaRate: 22,
-  agSeaCbmPrice: 6600,
-  agAirRate: 170,
-  marlarRate: 110,
-  cxRate: 200,
+  usdRate: 4450,
   defaultPaymentFeePct: 2,
   defaultMarketingPct: 20,
   defaultTargetMarginPct: 25,
@@ -109,6 +193,8 @@ const DEFAULT_SETTINGS = {
     { id: "pkg-box", name: "Branded box + bubble wrap", priceMMK: 1500 },
   ],
   suppliers: ["Dewu"],
+  logisticsMethods: DEFAULT_LOGISTICS_METHODS,
+  socialLinks: { instagram: "", tiktok: "", facebook: "", messenger: "", facebookManager: "" },
 };
 
 /* ============================== HELPERS ============================== */
@@ -127,61 +213,111 @@ const roundClean = (v, nearest) => {
 };
 
 /* ============================== LOGISTICS DEFAULTS & TOTALS ============================== */
-function defaultLogisticsConfig(methodId, settings) {
-  switch (methodId) {
-    case "genz":
-      return { rateRmbPerKg: String(settings.genzRate), weightKg: "", handlingMMK: "0", ruiliToYangonMMK: String(settings.genzRuiliToYangonDefault), yangonToHomeMMK: "0", otherMMK: "0" };
-    case "agsea":
-      return { rateRmbPerKg: String(settings.agSeaRate), cbmPriceRmb: String(settings.agSeaCbmPrice), weightKg: "", cbmQty: "0", handlingMMK: "0", importMMK: "0", deliveryMMK: "0" };
-    case "agair":
-      return { rateRmbPerKg: String(settings.agAirRate), weightKg: "", handlingMMK: "0", importMMK: "0", deliveryMMK: "0" };
-    case "marlar":
-      return { rateRmbPerKg: String(settings.marlarRate), weightKg: "", handlingMMK: "0", importMMK: "0", deliveryMMK: "0" };
-    case "cx":
-      return { rateRmbPerKg: String(settings.cxRate), weightKg: "", handlingMMK: "0", importMMK: "0", deliveryMMK: "0" };
-    default:
-      return {};
+// Applies a method's bracket table: finds the smallest "upTo" the actual weight
+// fits under; if the weight exceeds every row, extrapolates by continuing the
+// same step pattern from the last two rows (so "continue the same pattern"
+// instructions in a provider's rules work without needing infinite rows).
+function applyBracket(weight, table) {
+  if (!table || table.length === 0) return weight;
+  const sorted = [...table].sort((a, b) => n(a.upTo) - n(b.upTo));
+  for (const row of sorted) {
+    if (weight <= n(row.upTo)) return n(row.chargeAs);
   }
+  const last = sorted[sorted.length - 1];
+  const prev = sorted[sorted.length - 2] || { upTo: 0, chargeAs: 0 };
+  const weightStep = n(last.upTo) - n(prev.upTo);
+  const chargeStep = n(last.chargeAs) - n(prev.chargeAs);
+  if (weightStep <= 0) return n(last.chargeAs);
+  const stepsBeyond = Math.ceil((weight - n(last.upTo)) / weightStep);
+  return n(last.chargeAs) + stepsBeyond * chargeStep;
 }
 
-function defaultAllLogistics(settings) {
+function defaultLogisticsConfig(method) {
+  const d = method.defaults || {};
+  return {
+    actualWeightKg: "",
+    ratePerKg: String(d.ratePerKg ?? 0),
+    lengthCm: "", widthCm: "", heightCm: "", useVolumetric: false,
+    chargeBasis: "weight", cbmQty: "0", cbmPriceRmb: String(d.cbmPriceRmb ?? 0),
+    pricingMode: "weight", itemRate: String(d.itemRate ?? 0),
+    minChargeFlatAmount: String(method.minCharge?.flatAmount ?? 0),
+    secondaryRatePerKg: String(d.secondaryRatePerKg ?? 0), secondaryFlatMMK: String(d.secondaryFlatMMK ?? 0),
+    myanmarSideFeeMMK: "0",
+    handlingFeeMMK: "0",
+    homeDeliveryMMK: String(d.homeDeliveryMMK ?? 0),
+    importCustomsMMK: "0",
+  };
+}
+
+function defaultAllLogistics(methods) {
   const out = {};
-  LOGISTICS_METHODS.forEach((m) => { out[m.id] = defaultLogisticsConfig(m.id, settings); });
+  (methods || []).forEach((m) => { out[m.id] = defaultLogisticsConfig(m); });
   return out;
 }
 
-function computeMethodTotal(methodId, cfg, rmbRate) {
-  if (!cfg) return 0;
-  const weight = n(cfg.weightKg);
-  const rate = n(cfg.rateRmbPerKg);
-  const freight = weight * rate * rmbRate;
-  switch (methodId) {
-    case "genz":
-      return freight + n(cfg.handlingMMK) + n(cfg.ruiliToYangonMMK) + n(cfg.yangonToHomeMMK) + n(cfg.otherMMK);
-    case "agsea": {
-      const cbmCost = n(cfg.cbmQty) * n(cfg.cbmPriceRmb) * rmbRate;
-      return freight + cbmCost + n(cfg.handlingMMK) + n(cfg.importMMK) + n(cfg.deliveryMMK);
-    }
-    case "agair":
-    case "marlar":
-    case "cx":
-      return freight + n(cfg.handlingMMK) + n(cfg.importMMK) + n(cfg.deliveryMMK);
-    default:
-      return 0;
+// Every method reduces to the same shape: Product/Shipping Cost + Handling Fees +
+// Myanmar-side Fees + Home Delivery + Import/Customs Cost = Total Logistics Cost.
+// Which "weight rule" produces the shipping cost is entirely data-driven per method
+// (exact / bracket table / per-item / CBM), so adding a new provider never needs code.
+function computeMethodTotal(method, cfg, rmbRate) {
+  if (!method || !cfg) return { shippingCost: 0, secondaryCost: 0, myanmarSide: 0, handling: 0, homeDelivery: 0, importCustoms: 0, chargeableWeight: 0, total: 0 };
+
+  let actual = n(cfg.actualWeightKg);
+  if (method.supportsVolumetric && cfg.useVolumetric) {
+    const vol = (n(cfg.lengthCm) * n(cfg.widthCm) * n(cfg.heightCm)) / 5000;
+    actual = Math.max(actual, vol);
   }
+  const chargeableWeight = method.weightRuleKind === "bracket" ? applyBracket(actual, method.bracketTable) : actual;
+
+  let shippingCost = 0;
+  if (method.supportsPerItem && cfg.pricingMode === "perItem") {
+    const cur = method.perItemRateCurrency === "RMB" ? rmbRate : 1;
+    shippingCost = n(cfg.itemRate) * cur;
+  } else if (method.supportsCbm && cfg.chargeBasis === "cbm") {
+    shippingCost = n(cfg.cbmQty) * n(cfg.cbmPriceRmb) * rmbRate;
+  } else {
+    const cur = method.primaryRateCurrency === "RMB" ? rmbRate : 1;
+    shippingCost = chargeableWeight * n(cfg.ratePerKg) * cur;
+    if (method.minCharge?.enabled && actual > 0 && actual < n(method.minCharge.thresholdKg)) {
+      const minCur = method.minCharge.currency === "RMB" ? rmbRate : 1;
+      shippingCost = n(cfg.minChargeFlatAmount) * minCur;
+    }
+  }
+
+  let secondaryCost = 0;
+  if (method.hasSecondaryLeg) {
+    if (method.secondaryIsFlat) {
+      secondaryCost = n(cfg.secondaryFlatMMK);
+    } else {
+      const cur = method.secondaryRateCurrency === "RMB" ? rmbRate : 1;
+      secondaryCost = chargeableWeight * n(cfg.secondaryRatePerKg) * cur;
+    }
+  }
+
+  const myanmarSide = method.hasSecondaryLeg ? 0 : n(cfg.myanmarSideFeeMMK);
+  const handling = n(cfg.handlingFeeMMK);
+  const homeDelivery = n(cfg.homeDeliveryMMK);
+  const importCustoms = n(cfg.importCustomsMMK);
+  const total = shippingCost + secondaryCost + myanmarSide + handling + homeDelivery + importCustoms;
+
+  return { shippingCost, secondaryCost, myanmarSide, handling, homeDelivery, importCustoms, chargeableWeight, total };
 }
+
 
 /* ============================== CORE FINANCIAL FORMULAS ============================== */
 // Total Amount Spent = product cost + china domestic shipping + selected logistics total + other costs
 function computeProductCore(product, settings) {
   const dewuCostMMK = n(product.dewuPriceRmb) * settings.rmbRate;
   const chinaShippingMMK = n(product.chinaShippingRmb) * settings.rmbRate;
+  const methods = settings.logisticsMethods || [];
+  const methodBreakdowns = {};
+  methods.forEach((m) => { methodBreakdowns[m.id] = computeMethodTotal(m, product.logistics?.[m.id], settings.rmbRate); });
   const methodTotals = {};
-  LOGISTICS_METHODS.forEach((m) => { methodTotals[m.id] = computeMethodTotal(m.id, product.logistics?.[m.id], settings.rmbRate); });
+  Object.keys(methodBreakdowns).forEach((id) => { methodTotals[id] = methodBreakdowns[id].total; });
   const selectedLogisticsMMK = methodTotals[product.selectedMethod] || 0;
   const otherCost = n(product.otherCost);
   const totalSpent = dewuCostMMK + chinaShippingMMK + selectedLogisticsMMK + otherCost;
-  return { dewuCostMMK, chinaShippingMMK, methodTotals, selectedLogisticsMMK, otherCost, totalSpent };
+  return { dewuCostMMK, chinaShippingMMK, methodBreakdowns, methodTotals, selectedLogisticsMMK, otherCost, totalSpent };
 }
 
 // Payment fee = Selling Price × F
@@ -223,30 +359,37 @@ function computeProductFull(product, settings) {
   const suggestedRounded = suggested != null ? roundClean(suggested, settings.roundNearest) : null;
   const sellingPrice = n(product.actualSellingPrice) > 0 ? n(product.actualSellingPrice) : (suggestedRounded || 0);
   const fin = computeFinancials({ totalSpent: core.totalSpent, sellingPrice, paymentFeePct: product.paymentFeePct, marketingPct: product.marketingPct });
-  const marketPrice = n(product.marketPrice);
+
+  const marketRaw = n(product.marketPrice);
+  const marketCur = product.marketPriceCurrency || "MMK";
+  const marketPriceMMK = marketCur === "RMB" ? marketRaw * settings.rmbRate : marketCur === "USD" ? marketRaw * settings.usdRate : marketRaw;
+  const marketPriceRMB = settings.rmbRate > 0 ? marketPriceMMK / settings.rmbRate : 0;
+  const marketPriceUSD = settings.usdRate > 0 ? marketPriceMMK / settings.usdRate : 0;
   let marketFlag = null;
-  if (marketPrice > 0 && suggested != null) {
-    if (suggested > marketPrice) marketFlag = "low";
-    else if (suggested < marketPrice * 0.9) marketFlag = "good";
+  if (marketPriceMMK > 0 && suggested != null) {
+    if (suggested > marketPriceMMK) marketFlag = "low";
+    else if (suggested < marketPriceMMK * 0.9) marketFlag = "good";
   }
-  return { ...core, breakEven, suggested, suggestedRounded, sellingPrice, ...fin, marketPrice, marketFlag };
+  return { ...core, breakEven, suggested, suggestedRounded, sellingPrice, ...fin, marketPrice: marketPriceMMK, marketPriceMMK, marketPriceRMB, marketPriceUSD, marketFlag };
 }
 
 /* ============================== PRODUCT / ORDER SCHEMAS ============================== */
 function emptyProduct(settings) {
   return {
     id: null, name: "", sku: "", brand: "", category: CATEGORIES[0],
+    groupName: "", colorTag: "",
     dewuUrl: "", modelNumber: "", variant: "", size: "", imageUrl: "",
     dewuPriceRmb: "", chinaShippingRmb: "0",
     selectedMethod: "genz",
-    logistics: defaultAllLogistics(settings),
+    logistics: defaultAllLogistics(settings.logisticsMethods),
     otherCost: "0",
     paymentFeePct: String(settings.defaultPaymentFeePct),
     marketingPct: String(settings.defaultMarketingPct),
     targetMarginPct: String(settings.defaultTargetMarginPct),
-    marketPrice: "",
+    marketPrice: "", marketPriceCurrency: "MMK",
     actualSellingPrice: "",
     status: "Researching",
+    postedTo: [],
     notes: "", createdAt: null,
   };
 }
@@ -301,28 +444,31 @@ function computeOrderFinancials(order) {
 }
 
 /* ============================== MIGRATION FROM V1 DATA ============================== */
-const V1_METHOD_MAP = { genz: "genz", air: "agair", sea: "agsea", handcarry: "marlar", other: "cx" };
+const V1_METHOD_MAP = { genz: "genz", air: "ag-flight", sea: "ag-sea", handcarry: "marlar-air", other: "cx-air" };
 
 function migrateV1Product(old, oldSettings, settings) {
   const rmbRate = oldSettings?.cnyRate || settings.rmbRate;
   let dewuPriceRmb = n(old.purchasePrice);
   if (old.purchaseCurrency === "USD") dewuPriceRmb = (n(old.purchasePrice) * (oldSettings?.usdRate || 4450)) / rmbRate;
   else if (old.purchaseCurrency === "MMK") dewuPriceRmb = n(old.purchasePrice) / rmbRate;
-  const mappedMethod = V1_METHOD_MAP[old.shippingMethod] || "cx";
-  const logistics = defaultAllLogistics(settings);
-  logistics[mappedMethod] = {
-    ...logistics[mappedMethod],
-    weightKg: old.weightPerUnit || "",
-    handlingMMK: String(n(old.handlingCost)),
-    importMMK: String(n(old.importCost)),
-    deliveryMMK: String(n(old.finalDeliveryCost)),
-    ...(mappedMethod === "genz" ? { ruiliToYangonMMK: "0" } : {}),
-  };
-  if (mappedMethod === "cx" && old.shippingMethod === "other") {
-    // v1 "Other" stored a flat manual shipping number — fold it into CX's freight-equivalent via handling.
-    logistics.cx.rateRmbPerKg = "0";
-    logistics.cx.weightKg = "0";
-    logistics.cx.handlingMMK = String(n(old.manualShippingCost) + n(old.handlingCost));
+  const mappedMethod = V1_METHOD_MAP[old.shippingMethod] || "cx-air";
+  const methods = settings.logisticsMethods || DEFAULT_LOGISTICS_METHODS;
+  const logistics = defaultAllLogistics(methods);
+  const method = methods.find((m) => m.id === mappedMethod);
+  if (method && logistics[mappedMethod]) {
+    logistics[mappedMethod] = {
+      ...logistics[mappedMethod],
+      actualWeightKg: old.weightPerUnit || "",
+      handlingFeeMMK: String(n(old.handlingCost)),
+      importCustomsMMK: String(n(old.importCost)),
+      homeDeliveryMMK: String(n(old.finalDeliveryCost)),
+    };
+    if (mappedMethod === "cx-air" && old.shippingMethod === "other") {
+      // v1 "Other" stored a flat manual shipping number — fold it in as handling instead of guessing a rate/weight.
+      logistics["cx-air"].ratePerKg = "0";
+      logistics["cx-air"].actualWeightKg = "0";
+      logistics["cx-air"].handlingFeeMMK = String(n(old.manualShippingCost) + n(old.handlingCost));
+    }
   }
   return {
     id: old.id, name: old.name || "", sku: "", brand: old.supplier || "", category: CATEGORIES.includes(old.category) ? old.category : "Other",
@@ -333,13 +479,57 @@ function migrateV1Product(old, oldSettings, settings) {
     paymentFeePct: String(settings.defaultPaymentFeePct),
     marketingPct: String(n(old.marketingPct) || settings.defaultMarketingPct),
     targetMarginPct: String(settings.defaultTargetMarginPct),
-    marketPrice: "",
+    marketPrice: "", marketPriceCurrency: "MMK",
     actualSellingPrice: String(n(old.sellingPrice) || ""),
     status: "Active",
     notes: [old.notes, "(migrated from the earlier version of this app)"].filter(Boolean).join(" — "),
     createdAt: old.createdAt || Date.now(),
   };
 }
+
+/* ============================== MIGRATION: OLD LOGISTICS ENGINE → NEW ============================== */
+// The previous version had 5 fixed methods with their own field names and no per-provider
+// weight-rounding rules. This maps old product.logistics data onto the new generic engine —
+// used on load so nothing already entered is lost, and every product picks up defaults for
+// the newly-added providers automatically.
+const OLD_METHOD_ID_MAP = { agsea: "ag-sea", agair: "ag-flight", marlar: "marlar-air", cx: "cx-air", genz: "genz" };
+const OLD_FIELD_MAPS = {
+  genz: { ratePerKg: "rateRmbPerKg", actualWeightKg: "weightKg", handlingFeeMMK: "handlingMMK", secondaryFlatMMK: "ruiliToYangonMMK", homeDeliveryMMK: "yangonToHomeMMK", importCustomsMMK: "otherMMK" },
+  "ag-sea": { ratePerKg: "rateRmbPerKg", cbmPriceRmb: "cbmPriceRmb", actualWeightKg: "weightKg", cbmQty: "cbmQty", handlingFeeMMK: "handlingMMK", importCustomsMMK: "importMMK", homeDeliveryMMK: "deliveryMMK" },
+  "ag-flight": { ratePerKg: "rateRmbPerKg", actualWeightKg: "weightKg", handlingFeeMMK: "handlingMMK", importCustomsMMK: "importMMK", homeDeliveryMMK: "deliveryMMK" },
+  "marlar-air": { ratePerKg: "rateRmbPerKg", actualWeightKg: "weightKg", handlingFeeMMK: "handlingMMK", importCustomsMMK: "importMMK", homeDeliveryMMK: "deliveryMMK" },
+  "cx-air": { ratePerKg: "rateRmbPerKg", actualWeightKg: "weightKg", handlingFeeMMK: "handlingMMK", importCustomsMMK: "importMMK", homeDeliveryMMK: "deliveryMMK" },
+};
+
+function normalizeProductLogistics(product, methods) {
+  const list = methods && methods.length ? methods : DEFAULT_LOGISTICS_METHODS;
+  const oldLogistics = product.logistics || {};
+  const newLogistics = {};
+  list.forEach((m) => {
+    // Already shaped for the new engine under this exact id — keep it, just fill any new fields in.
+    if (oldLogistics[m.id] && oldLogistics[m.id].ratePerKg !== undefined) {
+      newLogistics[m.id] = { ...defaultLogisticsConfig(m), ...oldLogistics[m.id] };
+      return;
+    }
+    // Look for a legacy id/shape that maps onto this method and convert its field names.
+    const legacyId = Object.keys(OLD_METHOD_ID_MAP).find((k) => OLD_METHOD_ID_MAP[k] === m.id && oldLogistics[k]);
+    if (legacyId && OLD_FIELD_MAPS[m.id]) {
+      const src = oldLogistics[legacyId];
+      const mapped = defaultLogisticsConfig(m);
+      Object.entries(OLD_FIELD_MAPS[m.id]).forEach(([newKey, oldKey]) => {
+        if (src[oldKey] !== undefined) mapped[newKey] = String(src[oldKey]);
+      });
+      newLogistics[m.id] = mapped;
+      return;
+    }
+    // Brand-new method this product has never seen — seed defaults.
+    newLogistics[m.id] = defaultLogisticsConfig(m);
+  });
+  const mappedSelected = OLD_METHOD_ID_MAP[product.selectedMethod] || product.selectedMethod;
+  const selectedMethod = list.some((m) => m.id === mappedSelected) ? mappedSelected : (list[0]?.id || "");
+  return { ...product, logistics: newLogistics, selectedMethod };
+}
+
 
 // Reads whatever's in this browser's local storage (v2, or v1 as a fallback) —
 // used both as the offline data source and as a one-time upload into Supabase
@@ -457,6 +647,27 @@ function BasketballMark({ size = 22 }) {
   );
 }
 
+// Simple generic glyphs for the platform toggles/links — deliberately not exact
+// logo reproductions, just enough shape (plus the label alongside) to read clearly.
+function PlatformIcon({ id, size = 16, color }) {
+  const c = color || "currentColor";
+  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: c, strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round" };
+  switch (id) {
+    case "instagram":
+      return (<svg {...common}><rect x="3.5" y="3.5" width="17" height="17" rx="5" /><circle cx="12" cy="12" r="4" /><circle cx="17" cy="7" r="0.8" fill={c} stroke="none" /></svg>);
+    case "tiktok":
+      return (<svg {...common}><path d="M14 3v11.2a3.3 3.3 0 1 1-2.6-3.23" /><path d="M14 3c.4 2.4 2 4 4.5 4.3" /></svg>);
+    case "facebook":
+      return (<svg {...common}><circle cx="12" cy="12" r="8.5" /><path d="M13.2 20v-6.2h2l.3-2.4h-2.3V9.8c0-.7.2-1.2 1.2-1.2h1.3V6.4c-.2 0-1-.1-1.9-.1-1.9 0-3.2 1.2-3.2 3.3v1.9H8.6v2.4h2v6.1" /></svg>);
+    case "messenger":
+      return (<svg {...common}><path d="M12 4C7.3 4 3.5 7.5 3.5 12c0 2.4 1.1 4.6 2.9 6.1V21l2.7-1.5c.9.3 1.9.4 2.9.4 4.7 0 8.5-3.5 8.5-8s-3.8-7.9-8.5-7.9Z" /><path d="M7.5 12.8l2.8-3 2.2 2.3 2.9-3-2.8 4.2-2.2-2.3-2.9 3Z" /></svg>);
+    case "facebookManager":
+      return (<svg {...common}><rect x="3.5" y="8" width="17" height="11" rx="1.5" /><path d="M8.5 8V6.5A1.5 1.5 0 0 1 10 5h4a1.5 1.5 0 0 1 1.5 1.5V8" /><path d="M3.5 13h17" /></svg>);
+    default:
+      return null;
+  }
+}
+
 function ImagePlaceholder({ src, className = "", size = "w-14 h-14" }) {
   const [broken, setBroken] = useState(false);
   if (src && !broken) return <img src={src} onError={() => setBroken(true)} className={`${size} object-cover rounded-md ${className}`} style={{ border: `1px solid ${C.line}` }} alt="" />;
@@ -515,6 +726,7 @@ const NAV_ITEMS = [
   { id: "orders", label: "Orders", icon: Truck },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
   { id: "settings", label: "Settings", icon: SettingsIcon },
+  { id: "socials", label: "Socials", icon: Share2 },
 ];
 
 function Nav({ page, goTo, onAdd, syncStatus }) {
@@ -529,13 +741,9 @@ function Nav({ page, goTo, onAdd, syncStatus }) {
   return (
     <>
       <aside className="hidden lg:flex flex-col w-60 shrink-0 h-screen sticky top-0 px-4 py-6" style={{ background: C.surface, borderRight: `1px solid ${C.line}` }}>
-        <div className="flex items-center gap-2.5 px-2 mb-2">
-          <BasketballMark size={26} />
-          <div>
-            <div className="text-lg font-semibold leading-none" style={{ color: C.text, fontFamily: FONT_DISPLAY, letterSpacing: "0.02em" }}>COURTSIDE</div>
-            <div className="text-xs uppercase tracking-widest" style={{ color: C.muted }}>Resale Ops</div>
-          </div>
-        </div>
+        <button onClick={() => goTo("socials")} className="mb-4 self-start focus:outline-none" aria-label="Hoop Corner — go to Socials" title="Go to Socials">
+          <img src="/hoopcorner-logo-dark.png" alt="Hoop Corner" style={{ width: 150, height: "auto" }} />
+        </button>
         <div className="flex items-center gap-1.5 px-2 mb-6 text-xs" style={{ color: syncMeta.color }}>
           <SyncIcon size={12} /> {syncMeta.label}
         </div>
@@ -557,10 +765,9 @@ function Nav({ page, goTo, onAdd, syncStatus }) {
       </aside>
 
       <div className="lg:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3" style={{ background: C.surface, borderBottom: `1px solid ${C.line}` }}>
-        <div className="flex items-center gap-2">
-          <BasketballMark size={22} />
-          <span className="text-base font-semibold" style={{ color: C.text, fontFamily: FONT_DISPLAY, letterSpacing: "0.02em" }}>COURTSIDE</span>
-        </div>
+        <button onClick={() => goTo("socials")} className="focus:outline-none" aria-label="Hoop Corner — go to Socials">
+          <img src="/hoopcorner-logo-dark.png" alt="Hoop Corner" style={{ height: 32, width: "auto" }} />
+        </button>
         <button onClick={onAdd} className="p-2 rounded-md" style={{ background: C.accent, color: "#160D06" }} aria-label="Add new"><Plus size={18} /></button>
       </div>
 
@@ -660,6 +867,10 @@ function Dashboard({ products, orders, settings, goTo, openProduct, openOrder })
     <div className="space-y-6">
       <SectionTitle eyebrow="Business Overview" title="Dashboard" />
 
+      <div className="rounded-md overflow-hidden" style={{ border: `1px solid ${C.line}` }}>
+        <img src="/hoopcorner-banner.png" alt="Hoop Corner — Basketball Store" className="w-full h-auto block" />
+      </div>
+
       <Card padded={false} className="overflow-hidden relative">
         <div className="absolute inset-0 pointer-events-none opacity-5" style={{ backgroundImage: `radial-gradient(circle at 15% 20%, ${C.accent} 0%, transparent 45%)` }} />
         <div className="grid grid-cols-2 sm:grid-cols-4 relative">
@@ -746,29 +957,107 @@ function Dashboard({ products, orders, settings, goTo, openProduct, openOrder })
 }
 
 /* ============================== PRODUCTS PAGE ============================== */
-function ProductsPage({ products, settings, openProduct, goTo }) {
+function statusColor(status) {
+  if (status === "Active" || status === "Posted") return C.green;
+  if (status === "Planning to Post") return C.blue;
+  if (status === "Archived") return C.mutedFaint;
+  return C.amber; // Researching, Paused
+}
+
+function ProductCard({ p, full, openProduct, onTogglePosted }) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => openProduct(p.id)}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") openProduct(p.id); }}
+      className="text-left rounded-md p-4 transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-orange-500 cursor-pointer"
+      style={{ background: C.surface, border: `1px solid ${C.line}`, borderLeft: p.colorTag ? `4px solid ${p.colorTag}` : `1px solid ${C.line}` }}
+    >
+      <div className="flex items-start gap-3 mb-3">
+        <ImagePlaceholder src={p.imageUrl} size="w-12 h-12" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold truncate" style={{ color: C.text }}>{p.name || "Untitled product"}</div>
+          <div className="text-xs truncate" style={{ color: C.mutedFaint }}>{p.category}{p.brand ? ` · ${p.brand}` : ""}{p.groupName ? ` · ${p.groupName}` : ""}</div>
+        </div>
+        <Pill color={statusColor(p.status)}>{p.status}</Pill>
+      </div>
+      <div className="grid grid-cols-2 gap-y-1.5 text-xs mb-3">
+        <div style={{ color: C.mutedFaint }}>Dewu price</div>
+        <div className="text-right tabular-nums" style={{ color: C.text, fontFamily: FONT_MONO }}>¥{fmtNum(n(p.dewuPriceRmb), 0)}</div>
+        <div style={{ color: C.mutedFaint }}>Suggested price</div>
+        <div className="text-right tabular-nums" style={{ color: C.accentSoft, fontFamily: FONT_MONO }}>{full.suggestedRounded != null ? fmtNum(full.suggestedRounded) : "—"}</div>
+        <div style={{ color: C.mutedFaint }}>Break-even</div>
+        <div className="text-right tabular-nums" style={{ color: C.muted, fontFamily: FONT_MONO }}>{full.breakEven != null ? fmtNum(full.breakEven) : "—"}</div>
+        <div style={{ color: C.mutedFaint }}>Target margin</div>
+        <div className="text-right tabular-nums" style={{ color: C.muted, fontFamily: FONT_MONO }}>{p.targetMarginPct || 0}%</div>
+      </div>
+      <div className="flex items-center gap-1.5 pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
+        <span className="text-xs mr-0.5" style={{ color: C.mutedFaint }}>Posted:</span>
+        {SOCIAL_PLATFORMS.map((sp) => {
+          const active = (p.postedTo || []).includes(sp.id);
+          return (
+            <button
+              key={sp.id}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onTogglePosted(p.id, sp.id); }}
+              className="p-1.5 rounded-md"
+              style={{ background: active ? `${C.accent}1F` : C.surface2, border: `1px solid ${active ? C.accent : C.lineStrong}` }}
+              title={sp.label}
+              aria-label={`Toggle posted on ${sp.label}`}
+            >
+              <PlatformIcon id={sp.id} size={13} color={active ? C.accentSoft : C.mutedFaint} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ProductsPage({ products, settings, openProduct, goTo, onTogglePosted }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("newest");
   const [catFilter, setCatFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [postedFilter, setPostedFilter] = useState("All");
 
   const rows = useMemo(() => {
     let list = products.map((p) => ({ p, full: computeProductFull(p, settings) }));
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(({ p }) => (p.name + " " + p.brand + " " + p.sku).toLowerCase().includes(q));
+      list = list.filter(({ p }) => (p.name + " " + p.brand + " " + p.sku + " " + (p.groupName || "")).toLowerCase().includes(q));
     }
     if (catFilter !== "All") list = list.filter(({ p }) => p.category === catFilter);
     if (statusFilter !== "All") list = list.filter(({ p }) => p.status === statusFilter);
+    if (postedFilter === "Not posted") list = list.filter(({ p }) => !(p.postedTo || []).length);
+    else if (postedFilter !== "All") list = list.filter(({ p }) => (p.postedTo || []).includes(postedFilter));
     const sorters = {
       newest: (a, b) => (b.p.createdAt || 0) - (a.p.createdAt || 0),
       profit: (a, b) => b.full.finalProfit - a.full.finalProfit,
       roi: (a, b) => b.full.roi - a.full.roi,
       priceAsc: (a, b) => (a.full.suggestedRounded || 0) - (b.full.suggestedRounded || 0),
       name: (a, b) => (a.p.name || "").localeCompare(b.p.name || ""),
+      group: (a, b) => (a.p.groupName || "\uffff").localeCompare(b.p.groupName || "\uffff") || (a.p.name || "").localeCompare(b.p.name || ""),
     };
     return [...list].sort(sorters[sortBy] || sorters.newest);
-  }, [products, settings, search, sortBy, catFilter, statusFilter]);
+  }, [products, settings, search, sortBy, catFilter, statusFilter, postedFilter]);
+
+  // When sorting by group, cluster into labeled sections so a big catalog stays easy to scan.
+  const groupedSections = useMemo(() => {
+    if (sortBy !== "group") return null;
+    const sections = [];
+    let current = null;
+    rows.forEach((row) => {
+      const label = row.p.groupName || "Ungrouped";
+      if (!current || current.label !== label) {
+        current = { label, items: [] };
+        sections.push(current);
+      }
+      current.items.push(row);
+    });
+    return sections;
+  }, [rows, sortBy]);
 
   return (
     <div className="space-y-5">
@@ -778,10 +1067,11 @@ function ProductsPage({ products, settings, openProduct, goTo }) {
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1" style={{ minWidth: 180 }}>
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: C.mutedFaint }} />
-            <TextInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, brand, SKU" className="pl-9" />
+            <TextInput value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, brand, SKU, group" className="pl-9" />
           </div>
           <Select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="w-auto">
             <option value="newest">Sort: Newest</option>
+            <option value="group">Sort: Group name</option>
             <option value="profit">Sort: Highest profit</option>
             <option value="roi">Sort: Highest ROI</option>
             <option value="priceAsc">Sort: Lowest suggested price</option>
@@ -795,35 +1085,30 @@ function ProductsPage({ products, settings, openProduct, goTo }) {
             <option value="All">All statuses</option>
             {PRODUCT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </Select>
+          <Select value={postedFilter} onChange={(e) => setPostedFilter(e.target.value)} className="w-auto">
+            <option value="All">All posted-to</option>
+            <option value="Not posted">Not posted anywhere</option>
+            {SOCIAL_PLATFORMS.map((sp) => <option key={sp.id} value={sp.id}>{sp.label}</option>)}
+          </Select>
         </div>
       </Card>
 
       {rows.length === 0 ? (
         <Card className="text-center py-10"><p className="text-sm" style={{ color: C.mutedFaint }}>No products match these filters.</p></Card>
+      ) : groupedSections ? (
+        <div className="space-y-6">
+          {groupedSections.map((section) => (
+            <div key={section.label}>
+              <div className="text-xs font-semibold uppercase tracking-widest mb-2.5" style={{ color: C.muted, fontFamily: FONT_BODY }}>{section.label} <span style={{ color: C.mutedFaint }}>· {section.items.length}</span></div>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {section.items.map(({ p, full }) => <ProductCard key={p.id} p={p} full={full} openProduct={openProduct} onTogglePosted={onTogglePosted} />)}
+              </div>
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {rows.map(({ p, full }) => (
-            <button key={p.id} onClick={() => openProduct(p.id)} className="text-left rounded-md p-4 transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-orange-500" style={{ background: C.surface, border: `1px solid ${C.line}` }}>
-              <div className="flex items-start gap-3 mb-3">
-                <ImagePlaceholder src={p.imageUrl} size="w-12 h-12" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold truncate" style={{ color: C.text }}>{p.name || "Untitled product"}</div>
-                  <div className="text-xs truncate" style={{ color: C.mutedFaint }}>{p.category}{p.brand ? ` · ${p.brand}` : ""}</div>
-                </div>
-                <Pill color={p.status === "Active" ? C.green : p.status === "Archived" ? C.mutedFaint : C.amber}>{p.status}</Pill>
-              </div>
-              <div className="grid grid-cols-2 gap-y-1.5 text-xs">
-                <div style={{ color: C.mutedFaint }}>Dewu price</div>
-                <div className="text-right tabular-nums" style={{ color: C.text, fontFamily: FONT_MONO }}>¥{fmtNum(n(p.dewuPriceRmb), 0)}</div>
-                <div style={{ color: C.mutedFaint }}>Suggested price</div>
-                <div className="text-right tabular-nums" style={{ color: C.accentSoft, fontFamily: FONT_MONO }}>{full.suggestedRounded != null ? fmtNum(full.suggestedRounded) : "—"}</div>
-                <div style={{ color: C.mutedFaint }}>Break-even</div>
-                <div className="text-right tabular-nums" style={{ color: C.muted, fontFamily: FONT_MONO }}>{full.breakEven != null ? fmtNum(full.breakEven) : "—"}</div>
-                <div style={{ color: C.mutedFaint }}>Target margin</div>
-                <div className="text-right tabular-nums" style={{ color: C.muted, fontFamily: FONT_MONO }}>{p.targetMarginPct || 0}%</div>
-              </div>
-            </button>
-          ))}
+          {rows.map(({ p, full }) => <ProductCard key={p.id} p={p} full={full} openProduct={openProduct} onTogglePosted={onTogglePosted} />)}
         </div>
       )}
     </div>
@@ -833,43 +1118,103 @@ function ProductsPage({ products, settings, openProduct, goTo }) {
 /* ============================== LOGISTICS FIELD GROUP ============================== */
 function LogisticsFields({ method, cfg, setCfg, rmbRate }) {
   const set = (key) => (e) => setCfg({ ...cfg, [key]: e.target.value });
-  const total = computeMethodTotal(method.id, cfg, rmbRate);
+  const setBool = (key) => (e) => setCfg({ ...cfg, [key]: e.target.checked });
+  const breakdown = computeMethodTotal(method, cfg, rmbRate);
+  const rateCurrencyHint = method.primaryRateCurrency === "RMB" ? "¥/kg" : "MMK/kg";
+  const usingPerItem = method.supportsPerItem && cfg.pricingMode === "perItem";
+  const usingCbm = method.supportsCbm && cfg.chargeBasis === "cbm";
+
+  const breakdownRows = [
+    { label: usingPerItem ? "Per-item cost" : usingCbm ? "CBM cost" : "Shipping cost", value: breakdown.shippingCost },
+    method.hasSecondaryLeg && { label: method.secondaryLegLabel || "Second leg", value: breakdown.secondaryCost },
+    !method.hasSecondaryLeg && n(cfg.myanmarSideFeeMMK) > 0 && { label: "Myanmar-side fee", value: breakdown.myanmarSide },
+    n(cfg.handlingFeeMMK) > 0 && { label: "Handling", value: breakdown.handling },
+    n(cfg.homeDeliveryMMK) > 0 && { label: "Home delivery", value: breakdown.homeDelivery },
+    n(cfg.importCustomsMMK) > 0 && { label: "Import / customs", value: breakdown.importCustoms },
+  ].filter(Boolean);
+
   return (
     <div className="space-y-4">
-      {(method.goodFor || method.warn) && (
-        <div className="text-xs leading-relaxed space-y-1">
-          {method.goodFor && <p style={{ color: C.mutedFaint }}>{method.goodFor}</p>}
-          {method.warn && <p style={{ color: C.amber }}>⚠ {method.warn}</p>}
+      {method.weightRuleNote && <p className="text-xs leading-relaxed" style={{ color: C.mutedFaint }}>{method.weightRuleNote}</p>}
+
+      {method.supportsPerItem && (
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setCfg({ ...cfg, pricingMode: "weight" })} className="px-3 py-1.5 rounded-md text-xs font-semibold" style={{ background: !usingPerItem ? `${C.accent}1F` : C.surface2, border: `1px solid ${!usingPerItem ? C.accent : C.lineStrong}`, color: !usingPerItem ? C.accentSoft : C.muted }}>By weight</button>
+          <button type="button" onClick={() => setCfg({ ...cfg, pricingMode: "perItem" })} className="px-3 py-1.5 rounded-md text-xs font-semibold" style={{ background: usingPerItem ? `${C.accent}1F` : C.surface2, border: `1px solid ${usingPerItem ? C.accent : C.lineStrong}`, color: usingPerItem ? C.accentSoft : C.muted }}>Per item (branded)</button>
         </div>
       )}
+      {method.supportsCbm && (
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setCfg({ ...cfg, chargeBasis: "weight" })} className="px-3 py-1.5 rounded-md text-xs font-semibold" style={{ background: !usingCbm ? `${C.accent}1F` : C.surface2, border: `1px solid ${!usingCbm ? C.accent : C.lineStrong}`, color: !usingCbm ? C.accentSoft : C.muted }}>By weight</button>
+          <button type="button" onClick={() => setCfg({ ...cfg, chargeBasis: "cbm" })} className="px-3 py-1.5 rounded-md text-xs font-semibold" style={{ background: usingCbm ? `${C.accent}1F` : C.surface2, border: `1px solid ${usingCbm ? C.accent : C.lineStrong}`, color: usingCbm ? C.accentSoft : C.muted }}>By CBM</button>
+        </div>
+      )}
+
       <div className="grid sm:grid-cols-2 gap-3">
-        <Field label="Rate" hint="¥/kg"><TextInput type="number" min="0" value={cfg.rateRmbPerKg} onChange={set("rateRmbPerKg")} /></Field>
-        <Field label="Chargeable weight" hint="kg"><TextInput type="number" min="0" value={cfg.weightKg} onChange={set("weightKg")} /></Field>
-        {method.fieldSet === "sea" && (
+        {usingPerItem ? (
+          <Field label={method.perItemLabel || "Rate per item"} hint={method.perItemRateCurrency === "RMB" ? "¥/item" : "MMK/item"}>
+            <TextInput type="number" min="0" value={cfg.itemRate} onChange={set("itemRate")} />
+          </Field>
+        ) : usingCbm ? (
           <>
-            <Field label="CBM price" hint="¥/CBM"><TextInput type="number" min="0" value={cfg.cbmPriceRmb} onChange={set("cbmPriceRmb")} /></Field>
+            <Field label={method.cbmPriceLabel || "CBM price"} hint="¥/CBM"><TextInput type="number" min="0" value={cfg.cbmPriceRmb} onChange={set("cbmPriceRmb")} /></Field>
             <Field label="Total CBM"><TextInput type="number" min="0" value={cfg.cbmQty} onChange={set("cbmQty")} /></Field>
-          </>
-        )}
-        <Field label="Handling" hint="MMK"><TextInput type="number" min="0" value={cfg.handlingMMK} onChange={set("handlingMMK")} /></Field>
-        {method.fieldSet === "genz" ? (
-          <>
-            <Field label="Ruili → Yangon" hint="MMK — estimate, adjust when known"><TextInput type="number" min="0" value={cfg.ruiliToYangonMMK} onChange={set("ruiliToYangonMMK")} /></Field>
-            <Field label="Yangon → home delivery" hint="MMK"><TextInput type="number" min="0" value={cfg.yangonToHomeMMK} onChange={set("yangonToHomeMMK")} /></Field>
-            <Field label="Other handling" hint="MMK"><TextInput type="number" min="0" value={cfg.otherMMK} onChange={set("otherMMK")} /></Field>
           </>
         ) : (
           <>
-            <Field label="Import / customs" hint="MMK"><TextInput type="number" min="0" value={cfg.importMMK} onChange={set("importMMK")} /></Field>
-            <Field label="Home delivery" hint="MMK"><TextInput type="number" min="0" value={cfg.deliveryMMK} onChange={set("deliveryMMK")} /></Field>
+            <Field label={method.primaryRateLabel || "Rate"} hint={rateCurrencyHint}><TextInput type="number" min="0" value={cfg.ratePerKg} onChange={set("ratePerKg")} /></Field>
+            <Field label="Actual weight" hint="kg"><TextInput type="number" min="0" value={cfg.actualWeightKg} onChange={set("actualWeightKg")} /></Field>
+            {method.supportsVolumetric && (
+              <>
+                <Field label="Dimensions" hint="cm — L × W × H, optional">
+                  <div className="flex gap-2">
+                    <TextInput type="number" min="0" value={cfg.lengthCm} onChange={set("lengthCm")} placeholder="L" />
+                    <TextInput type="number" min="0" value={cfg.widthCm} onChange={set("widthCm")} placeholder="W" />
+                    <TextInput type="number" min="0" value={cfg.heightCm} onChange={set("heightCm")} placeholder="H" />
+                  </div>
+                </Field>
+                <label className="flex items-center gap-2 text-xs pt-6" style={{ color: C.muted }}>
+                  <input type="checkbox" checked={!!cfg.useVolumetric} onChange={setBool("useVolumetric")} /> Use volumetric weight if greater
+                </label>
+              </>
+            )}
+            {method.weightRuleKind === "bracket" && (
+              <div className="text-xs pt-1 sm:col-span-2" style={{ color: C.mutedFaint }}>
+                Chargeable weight (after rounding): <span style={{ color: C.text, fontFamily: FONT_MONO }}>{fmtNum(breakdown.chargeableWeight, 2)} kg</span> · edit the bracket table in Settings.
+              </div>
+            )}
+            {method.minCharge?.enabled && (
+              <Field label="Minimum charge" hint={`applies under ${method.minCharge.thresholdKg}kg — ${method.minCharge.currency}`}>
+                <TextInput type="number" min="0" value={cfg.minChargeFlatAmount} onChange={set("minChargeFlatAmount")} />
+              </Field>
+            )}
           </>
         )}
+
+        {method.hasSecondaryLeg && (
+          method.secondaryIsFlat ? (
+            <Field label={method.secondaryLegLabel} hint="MMK — estimate, adjust when known"><TextInput type="number" min="0" value={cfg.secondaryFlatMMK} onChange={set("secondaryFlatMMK")} /></Field>
+          ) : (
+            <Field label={method.secondaryLegLabel} hint={method.secondaryRateCurrency === "RMB" ? "¥/kg" : "MMK/kg"}><TextInput type="number" min="0" value={cfg.secondaryRatePerKg} onChange={set("secondaryRatePerKg")} /></Field>
+          )
+        )}
+        {!method.hasSecondaryLeg && <Field label="Myanmar-side fee" hint="MMK — optional"><TextInput type="number" min="0" value={cfg.myanmarSideFeeMMK} onChange={set("myanmarSideFeeMMK")} /></Field>}
+        <Field label="Handling" hint="MMK"><TextInput type="number" min="0" value={cfg.handlingFeeMMK} onChange={set("handlingFeeMMK")} /></Field>
+        <Field label="Home delivery" hint="MMK"><TextInput type="number" min="0" value={cfg.homeDeliveryMMK} onChange={set("homeDeliveryMMK")} /></Field>
+        <Field label="Import / customs" hint="MMK"><TextInput type="number" min="0" value={cfg.importCustomsMMK} onChange={set("importCustomsMMK")} /></Field>
       </div>
-      <div className="pt-2 flex items-center justify-between" style={{ borderTop: `1px solid ${C.line}` }}>
-        <span className="text-xs font-semibold uppercase tracking-wide pt-2" style={{ color: C.muted }}>
-          {method.id === "genz" ? "GenZ Cargo price (including handling)" : `Total ${method.label} cost`}
-        </span>
-        <span className="text-base font-semibold tabular-nums pt-2" style={{ color: C.text, fontFamily: FONT_MONO }}>{fmtMMK(total)}</span>
+
+      <div className="pt-2 space-y-1" style={{ borderTop: `1px solid ${C.line}` }}>
+        {breakdownRows.map((r) => (
+          <div key={r.label} className="flex items-center justify-between text-xs pt-1" style={{ color: C.mutedFaint }}>
+            <span>{r.label}</span>
+            <span className="tabular-nums" style={{ fontFamily: FONT_MONO }}>{fmtNum(r.value)}</span>
+          </div>
+        ))}
+        <div className="flex items-center justify-between pt-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.muted }}>Total {method.label} cost</span>
+          <span className="text-base font-semibold tabular-nums" style={{ color: C.text, fontFamily: FONT_MONO }}>{fmtMMK(breakdown.total)}</span>
+        </div>
       </div>
     </div>
   );
@@ -881,7 +1226,7 @@ function ProductDetailPage({ draft, setDraft, settings, onSave, onDelete, onCrea
   const set = (key) => (e) => setDraft((d) => ({ ...d, [key]: e.target.value }));
   const setLogistics = (methodId) => (cfg) => setDraft((d) => ({ ...d, logistics: { ...d.logistics, [methodId]: cfg } }));
 
-  const comparisonRows = LOGISTICS_METHODS.map((m) => {
+  const comparisonRows = (settings.logisticsMethods || []).map((m) => {
     const totalSpent = full.dewuCostMMK + full.chinaShippingMMK + full.methodTotals[m.id] + full.otherCost;
     const suggested = computeSuggestedPrice(totalSpent, draft.paymentFeePct, draft.marketingPct, draft.targetMarginPct);
     const suggestedRounded = suggested != null ? roundClean(suggested, settings.roundNearest) : null;
@@ -898,7 +1243,11 @@ function ProductDetailPage({ draft, setDraft, settings, onSave, onDelete, onCrea
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: C.accent, fontFamily: FONT_BODY }}>{isNew ? "New Product" : "Edit Product"}</div>
-          <h2 className="text-2xl sm:text-3xl font-semibold" style={{ color: C.text, fontFamily: FONT_DISPLAY }}>{draft.name || "Untitled product"}</h2>
+          <h2 className="text-2xl sm:text-3xl font-semibold flex items-center gap-2.5" style={{ color: C.text, fontFamily: FONT_DISPLAY }}>
+            {draft.colorTag && <span style={{ width: 16, height: 16, borderRadius: 4, background: draft.colorTag, border: `1px solid ${C.lineStrong}`, flexShrink: 0 }} title={draft.colorTag} />}
+            {draft.name || "Untitled product"}
+          </h2>
+          {draft.groupName && <div className="text-xs mt-1" style={{ color: C.mutedFaint }}>{draft.groupName}</div>}
         </div>
         <div className="flex gap-2">
           {!isNew && <Button variant="danger" onClick={onDelete}><Trash2 size={14} /> Delete</Button>}
@@ -932,6 +1281,13 @@ function ProductDetailPage({ draft, setDraft, settings, onSave, onDelete, onCrea
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Product name"><TextInput value={draft.name} onChange={set("name")} placeholder="e.g. Nike Varsity Elite Backpack" /></Field>
           <Field label="Category"><Select value={draft.category} onChange={set("category")}>{CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}</Select></Field>
+          <Field label="Group name" hint="your own grouping — e.g. a drop or batch"><TextInput value={draft.groupName} onChange={set("groupName")} placeholder="e.g. Summer Drop" /></Field>
+          <Field label="Color tag" hint="for quick visual sorting">
+            <div className="flex items-center gap-2">
+              <input type="color" value={draft.colorTag || "#E8622B"} onChange={set("colorTag")} className="w-10 h-9 rounded-md cursor-pointer" style={{ background: "transparent", border: `1px solid ${C.lineStrong}` }} />
+              <TextInput value={draft.colorTag} onChange={set("colorTag")} placeholder="#E8622B" className="flex-1" />
+            </div>
+          </Field>
           <Field label="Brand"><TextInput value={draft.brand} onChange={set("brand")} /></Field>
           <Field label="SKU / Product ID"><TextInput value={draft.sku} onChange={set("sku")} placeholder="e.g. HM9965-503" /></Field>
           <Field label="Dewu model number"><TextInput value={draft.modelNumber} onChange={set("modelNumber")} /></Field>
@@ -944,6 +1300,30 @@ function ProductDetailPage({ draft, setDraft, settings, onSave, onDelete, onCrea
         <div className="mt-4"><Field label="Notes" hint="optional"><TextArea rows={2} value={draft.notes} onChange={set("notes")} /></Field></div>
       </Card>
 
+      {/* Posted to */}
+      <Card>
+        <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>Posted to</div>
+        <div className="flex flex-wrap gap-2">
+          {SOCIAL_PLATFORMS.map((p) => {
+            const active = (draft.postedTo || []).includes(p.id);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setDraft((d) => {
+                  const cur = d.postedTo || [];
+                  return { ...d, postedTo: cur.includes(p.id) ? cur.filter((x) => x !== p.id) : [...cur, p.id] };
+                })}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold"
+                style={{ background: active ? `${C.accent}1F` : C.surface2, border: `1px solid ${active ? C.accent : C.lineStrong}`, color: active ? C.accentSoft : C.muted }}
+              >
+                <PlatformIcon id={p.id} size={14} /> {p.label}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
       {/* Cost inputs */}
       <Card>
         <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>Product cost</div>
@@ -951,12 +1331,34 @@ function ProductDetailPage({ draft, setDraft, settings, onSave, onDelete, onCrea
           <Field label="Dewu price" hint="RMB / Yuan"><TextInput type="number" min="0" value={draft.dewuPriceRmb} onChange={set("dewuPriceRmb")} placeholder="0" /></Field>
           <Field label="China domestic shipping" hint="RMB"><TextInput type="number" min="0" value={draft.chinaShippingRmb} onChange={set("chinaShippingRmb")} /></Field>
           <Field label="Other costs" hint="MMK — packaging, misc"><TextInput type="number" min="0" value={draft.otherCost} onChange={set("otherCost")} /></Field>
-          <Field label="Market / reference price" hint="MMK — optional"><TextInput type="number" min="0" value={draft.marketPrice} onChange={set("marketPrice")} /></Field>
         </div>
         <div className="mt-3 text-xs tabular-nums" style={{ color: C.mutedFaint, fontFamily: FONT_MONO }}>
           {fmtNum(n(draft.dewuPriceRmb))} RMB × {settings.rmbRate} = <span style={{ color: C.text }}>{fmtMMK(full.dewuCostMMK)}</span>
           {n(draft.chinaShippingRmb) > 0 && <> · + China shipping {fmtMMK(full.chinaShippingMMK)}</>}
         </div>
+      </Card>
+
+      <Card>
+        <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>Market / reference price</div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <Field label="Reference price" hint="optional — what it sells for elsewhere">
+            <TextInput type="number" min="0" value={draft.marketPrice} onChange={set("marketPrice")} />
+          </Field>
+          <Field label="Currency">
+            <Select value={draft.marketPriceCurrency} onChange={set("marketPriceCurrency")}>
+              <option value="MMK">MMK</option>
+              <option value="RMB">RMB / Yuan</option>
+              <option value="USD">USD</option>
+            </Select>
+          </Field>
+        </div>
+        {n(draft.marketPrice) > 0 && (
+          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs tabular-nums" style={{ color: C.mutedFaint, fontFamily: FONT_MONO }}>
+            <span>MMK: <span style={{ color: C.text }}>{fmtNum(full.marketPriceMMK)}</span></span>
+            <span>¥ RMB: <span style={{ color: C.text }}>{fmtNum(full.marketPriceRMB, 2)}</span></span>
+            <span>$ USD: <span style={{ color: C.text }}>{fmtNum(full.marketPriceUSD, 2)}</span></span>
+          </div>
+        )}
       </Card>
 
       {/* Percentages */}
@@ -991,13 +1393,14 @@ function ProductDetailPage({ draft, setDraft, settings, onSave, onDelete, onCrea
       <div>
         <div className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: C.accent, fontFamily: FONT_BODY }}>China → Myanmar logistics</div>
         <div className="space-y-3">
-          {LOGISTICS_METHODS.map((m) => {
+          {(settings.logisticsMethods || []).map((m) => {
             const isSelected = draft.selectedMethod === m.id;
+            const cfg = draft.logistics?.[m.id] || defaultLogisticsConfig(m);
             return (
               <Accordion
                 key={m.id}
                 title={m.label}
-                subtitle={m.sub}
+                subtitle={`${m.type}${m.deliveryTime ? ` · ${m.deliveryTime}` : ""}`}
                 defaultOpen={isSelected}
                 badge={
                   <>
@@ -1020,10 +1423,13 @@ function ProductDetailPage({ draft, setDraft, settings, onSave, onDelete, onCrea
                     {isSelected ? "✓ Used for Total Amount Spent" : "Use this method"}
                   </button>
                 </div>
-                <LogisticsFields method={m} cfg={draft.logistics[m.id]} setCfg={setLogistics(m.id)} rmbRate={settings.rmbRate} />
+                <LogisticsFields method={m} cfg={cfg} setCfg={setLogistics(m.id)} rmbRate={settings.rmbRate} />
               </Accordion>
             );
           })}
+          {(settings.logisticsMethods || []).length === 0 && (
+            <Card className="text-center py-6"><p className="text-sm" style={{ color: C.mutedFaint }}>No logistics methods set up yet — add one in Settings.</p></Card>
+          )}
         </div>
       </div>
 
@@ -1215,7 +1621,7 @@ function OrderFormPage({ draft, setDraft, products, settings, onSave, onDelete, 
         <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>Shipping &amp; logistics</div>
         <div className="grid sm:grid-cols-2 gap-4">
           <Field label="Customer shipping option"><Select value={draft.customerShipping} onChange={set("customerShipping")}>{CUSTOMER_SHIPPING_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}</Select></Field>
-          <Field label="Logistics method"><Select value={draft.logisticsMethod} onChange={set("logisticsMethod")}>{LOGISTICS_METHODS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</Select></Field>
+          <Field label="Logistics method"><Select value={draft.logisticsMethod} onChange={set("logisticsMethod")}>{(settings.logisticsMethods || []).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</Select></Field>
           <Field label="Order date"><TextInput type="date" value={draft.orderDate} onChange={set("orderDate")} /></Field>
           <Field label="Estimated arrival"><TextInput type="date" value={draft.eta} onChange={set("eta")} /></Field>
         </div>
@@ -1316,6 +1722,241 @@ function AnalyticsPage({ products, orders, settings }) {
   );
 }
 
+/* ============================== SOCIALS PAGE ============================== */
+function SocialsPage({ settings, onSave }) {
+  const [draft, setDraft] = useState(settings.socialLinks || {});
+  useEffect(() => setDraft(settings.socialLinks || {}), [settings.socialLinks]);
+  const [saved, setSaved] = useState(false);
+
+  const set = (id) => (e) => setDraft((d) => ({ ...d, [id]: e.target.value }));
+  const save = () => {
+    onSave({ ...settings, socialLinks: draft });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  };
+
+  const openable = (url) => url && /^https?:\/\//i.test(url.trim());
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <SectionTitle eyebrow="Hoop Corner" title="Socials" right={<Button onClick={save}>{saved ? <><Check size={14} /> Saved</> : "Save links"}</Button>} />
+      <p className="text-sm -mt-3" style={{ color: C.mutedFaint }}>Paste each profile link once — the icon button opens it directly, and the logo in the sidebar jumps here.</p>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        {SOCIAL_PLATFORMS.map((p) => {
+          const url = draft[p.id] || "";
+          return (
+            <Card key={p.id}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-md flex items-center justify-center shrink-0" style={{ background: C.surface2, border: `1px solid ${C.line}` }}>
+                  <PlatformIcon id={p.id} size={18} color={C.accentSoft} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold" style={{ color: C.text, fontFamily: FONT_DISPLAY }}>{p.label}</div>
+                </div>
+                {openable(url) && (
+                  <a href={url} target="_blank" rel="noreferrer" className="p-2 rounded-md" style={{ color: C.accent }} aria-label={`Open ${p.label}`}>
+                    <ExternalLink size={16} />
+                  </a>
+                )}
+              </div>
+              <TextInput value={url} onChange={set(p.id)} placeholder={`https://...`} />
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+/* ============================== LOGISTICS METHODS EDITOR (Settings) ============================== */
+function blankMethodTemplate() {
+  return {
+    id: uid("method"), label: "New Provider", type: "Land / Road", deliveryTime: "",
+    primaryRateLabel: "Rate", primaryRateCurrency: "RMB",
+    weightRuleKind: "exact", weightRuleNote: "",
+    minCharge: { enabled: false, thresholdKg: 1, flatAmount: 0, currency: "RMB" },
+    hasSecondaryLeg: false, secondaryLegLabel: "", secondaryIsFlat: true, secondaryRateCurrency: "MMK",
+    supportsCbm: false, cbmPriceLabel: "CBM price",
+    supportsPerItem: false, perItemLabel: "Per item", perItemRateCurrency: "RMB",
+    supportsVolumetric: false,
+    bracketTable: [],
+    defaults: { ratePerKg: 0, homeDeliveryMMK: 0 },
+  };
+}
+
+function LogisticsMethodEditor({ method, onChange, onDelete }) {
+  const set = (key) => (e) => onChange({ ...method, [key]: e.target.value });
+  const setBool = (key) => (e) => onChange({ ...method, [key]: e.target.checked });
+  const setDefault = (key) => (e) => onChange({ ...method, defaults: { ...method.defaults, [key]: e.target.value } });
+  const setMinCharge = (key) => (e) => onChange({ ...method, minCharge: { ...method.minCharge, [key]: e.target.type === "checkbox" ? e.target.checked : e.target.value } });
+
+  const bracketTable = method.bracketTable || [];
+  const setBracketTable = (list) => onChange({ ...method, bracketTable: list });
+  const addBracketRow = () => setBracketTable([...bracketTable, { upTo: 0, chargeAs: 0 }]);
+  const updateBracketRow = (i, key, value) => setBracketTable(bracketTable.map((r, idx) => (idx === i ? { ...r, [key]: value } : r)));
+  const removeBracketRow = (i) => setBracketTable(bracketTable.filter((_, idx) => idx !== i));
+
+  return (
+    <Accordion title={method.label || "Untitled provider"} subtitle={`${method.type || ""}${method.deliveryTime ? " · " + method.deliveryTime : ""}`}>
+      <div className="space-y-4">
+        <div className="grid sm:grid-cols-3 gap-3">
+          <Field label="Label"><TextInput value={method.label} onChange={set("label")} /></Field>
+          <Field label="Type"><TextInput value={method.type} onChange={set("type")} placeholder="e.g. Air, Land, Sea" /></Field>
+          <Field label="Delivery time"><TextInput value={method.deliveryTime} onChange={set("deliveryTime")} placeholder="e.g. 3–7 days" /></Field>
+        </div>
+
+        <div className="grid sm:grid-cols-3 gap-3">
+          <Field label="Primary rate label"><TextInput value={method.primaryRateLabel} onChange={set("primaryRateLabel")} /></Field>
+          <Field label="Rate currency">
+            <Select value={method.primaryRateCurrency} onChange={set("primaryRateCurrency")}>
+              <option value="RMB">RMB (¥/kg)</option>
+              <option value="MMK">MMK (MMK/kg)</option>
+            </Select>
+          </Field>
+          <Field label="Default rate"><TextInput type="number" min="0" value={method.defaults?.ratePerKg ?? 0} onChange={setDefault("ratePerKg")} /></Field>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <Field label="Weight rule">
+            <Select value={method.weightRuleKind} onChange={set("weightRuleKind")}>
+              <option value="exact">Exact weight — no rounding</option>
+              <option value="bracket">Bracket table — round to fixed steps</option>
+            </Select>
+          </Field>
+          <Field label="Note shown on the product page" hint="optional"><TextInput value={method.weightRuleNote} onChange={set("weightRuleNote")} /></Field>
+        </div>
+
+        {method.weightRuleKind === "bracket" && (
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.muted }}>Bracket table</div>
+            <div className="space-y-2">
+              {bracketTable.map((row, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <TextInput type="number" min="0" step="0.1" value={row.upTo} onChange={(e) => updateBracketRow(i, "upTo", e.target.value)} placeholder="up to kg" />
+                  <span className="text-xs shrink-0" style={{ color: C.mutedFaint }}>kg →</span>
+                  <TextInput type="number" min="0" step="0.1" value={row.chargeAs} onChange={(e) => updateBracketRow(i, "chargeAs", e.target.value)} placeholder="charge as kg" />
+                  <button onClick={() => removeBracketRow(i)} className="p-1.5 rounded-md shrink-0" style={{ color: C.red }} aria-label="Remove row"><Trash2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+            <Button variant="ghost" className="mt-2" onClick={addBracketRow}><Plus size={13} /> Add row</Button>
+            <p className="text-xs mt-2" style={{ color: C.mutedFaint }}>Beyond the last row, the same step pattern continues automatically.</p>
+          </div>
+        )}
+
+        <div>
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.muted }}>
+            <input type="checkbox" checked={!!method.minCharge?.enabled} onChange={setMinCharge("enabled")} /> Minimum charge under a weight threshold
+          </label>
+          {method.minCharge?.enabled && (
+            <div className="grid sm:grid-cols-3 gap-3 pl-6">
+              <Field label="Under (kg)"><TextInput type="number" min="0" step="0.1" value={method.minCharge.thresholdKg} onChange={setMinCharge("thresholdKg")} /></Field>
+              <Field label="Flat charge"><TextInput type="number" min="0" value={method.minCharge.flatAmount} onChange={setMinCharge("flatAmount")} /></Field>
+              <Field label="Currency">
+                <Select value={method.minCharge.currency} onChange={setMinCharge("currency")}>
+                  <option value="RMB">RMB</option>
+                  <option value="MMK">MMK</option>
+                </Select>
+              </Field>
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: C.muted }}>
+            <input type="checkbox" checked={!!method.hasSecondaryLeg} onChange={setBool("hasSecondaryLeg")} /> Has a second leg (e.g. a domestic Myanmar-side fee)
+          </label>
+          {method.hasSecondaryLeg && (
+            <div className="grid sm:grid-cols-3 gap-3 pl-6">
+              <Field label="Leg label"><TextInput value={method.secondaryLegLabel} onChange={set("secondaryLegLabel")} placeholder="e.g. Ruili → Yangon" /></Field>
+              <Field label="Pricing">
+                <Select value={method.secondaryIsFlat ? "flat" : "perkg"} onChange={(e) => onChange({ ...method, secondaryIsFlat: e.target.value === "flat" })}>
+                  <option value="flat">Flat amount</option>
+                  <option value="perkg">Per kg</option>
+                </Select>
+              </Field>
+              {method.secondaryIsFlat ? (
+                <Field label="Default flat (MMK)"><TextInput type="number" min="0" value={method.defaults?.secondaryFlatMMK ?? 0} onChange={setDefault("secondaryFlatMMK")} /></Field>
+              ) : (
+                <>
+                  <Field label="Rate currency">
+                    <Select value={method.secondaryRateCurrency} onChange={set("secondaryRateCurrency")}>
+                      <option value="RMB">RMB</option>
+                      <option value="MMK">MMK</option>
+                    </Select>
+                  </Field>
+                  <Field label="Default rate/kg"><TextInput type="number" min="0" value={method.defaults?.secondaryRatePerKg ?? 0} onChange={setDefault("secondaryRatePerKg")} /></Field>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
+            <input type="checkbox" checked={!!method.supportsCbm} onChange={setBool("supportsCbm")} /> Supports CBM pricing alternative
+          </label>
+          <label className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
+            <input type="checkbox" checked={!!method.supportsPerItem} onChange={setBool("supportsPerItem")} /> Supports per-item pricing
+          </label>
+          <label className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
+            <input type="checkbox" checked={!!method.supportsVolumetric} onChange={setBool("supportsVolumetric")} /> Supports volumetric weight
+          </label>
+        </div>
+
+        {method.supportsCbm && (
+          <div className="grid sm:grid-cols-2 gap-3 pl-6">
+            <Field label="CBM price label"><TextInput value={method.cbmPriceLabel} onChange={set("cbmPriceLabel")} /></Field>
+            <Field label="Default CBM price (¥)"><TextInput type="number" min="0" value={method.defaults?.cbmPriceRmb ?? 0} onChange={setDefault("cbmPriceRmb")} /></Field>
+          </div>
+        )}
+        {method.supportsPerItem && (
+          <div className="grid sm:grid-cols-3 gap-3 pl-6">
+            <Field label="Per-item label"><TextInput value={method.perItemLabel} onChange={set("perItemLabel")} /></Field>
+            <Field label="Rate currency">
+              <Select value={method.perItemRateCurrency} onChange={set("perItemRateCurrency")}>
+                <option value="RMB">RMB</option>
+                <option value="MMK">MMK</option>
+              </Select>
+            </Field>
+            <Field label="Default rate/item"><TextInput type="number" min="0" value={method.defaults?.itemRate ?? 0} onChange={setDefault("itemRate")} /></Field>
+          </div>
+        )}
+
+        <Field label="Default home delivery" hint="MMK"><TextInput type="number" min="0" value={method.defaults?.homeDeliveryMMK ?? 0} onChange={setDefault("homeDeliveryMMK")} /></Field>
+
+        <div className="pt-2" style={{ borderTop: `1px solid ${C.line}` }}>
+          <Button variant="danger" className="mt-3" onClick={onDelete}><Trash2 size={13} /> Delete this provider</Button>
+        </div>
+      </div>
+    </Accordion>
+  );
+}
+
+function LogisticsMethodsSection({ methods, setMethods }) {
+  const updateMethod = (id, next) => setMethods(methods.map((m) => (m.id === id ? next : m)));
+  const deleteMethod = (id) => setMethods(methods.filter((m) => m.id !== id));
+  const addMethod = () => setMethods([...methods, blankMethodTemplate()]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.accent, fontFamily: FONT_BODY }}>Logistics providers</div>
+          <p className="text-xs mt-1" style={{ color: C.mutedFaint }}>Every field — including the weight-rounding rule — is editable. Add as many custom providers as you need.</p>
+        </div>
+        <Button variant="ghost" onClick={addMethod}><Plus size={14} /> Add provider</Button>
+      </div>
+      <div className="space-y-2">
+        {methods.map((m) => (
+          <LogisticsMethodEditor key={m.id} method={m} onChange={(next) => updateMethod(m.id, next)} onDelete={() => deleteMethod(m.id)} />
+        ))}
+        {methods.length === 0 && <Card className="text-center py-6"><p className="text-sm" style={{ color: C.mutedFaint }}>No providers yet — add one above.</p></Card>}
+      </div>
+    </div>
+  );
+}
+
 /* ============================== SETTINGS PAGE ============================== */
 function SettingsPage({ settings, onSave }) {
   const [draft, setDraft] = useState(settings);
@@ -1357,29 +1998,14 @@ function SettingsPage({ settings, onSave }) {
       <p className="text-sm -mt-3" style={{ color: C.mutedFaint }}>Every product and order pulls its rates from here — nothing is hardcoded in the calculators.</p>
 
       <Card>
-        <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>Exchange rate</div>
-        <Field label="RMB → MMK"><TextInput type="number" value={draft.rmbRate} onChange={set("rmbRate")} /></Field>
-      </Card>
-
-      <Card>
-        <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>GenZ Cargo</div>
+        <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>Exchange rates</div>
         <div className="grid sm:grid-cols-2 gap-4">
-          <Field label="China → Ruili rate" hint="¥/kg — default 8"><TextInput type="number" value={draft.genzRate} onChange={set("genzRate")} /></Field>
-          <Field label="Ruili → Yangon default" hint="MMK — estimate, varies by shipment"><TextInput type="number" value={draft.genzRuiliToYangonDefault} onChange={set("genzRuiliToYangonDefault")} /></Field>
-        </div>
-        <p className="text-xs mt-3 leading-relaxed" style={{ color: C.mutedFaint }}>GenZ cost = (weight × rate × RMB→MMK) + handling + Ruili→Yangon + Yangon→home. Never a flat fee. Not recommended for shoes.</p>
-      </Card>
-
-      <Card>
-        <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>Other logistics defaults</div>
-        <div className="grid sm:grid-cols-2 gap-4">
-          <Field label="AG Sea rate" hint="¥/kg — default 22"><TextInput type="number" value={draft.agSeaRate} onChange={set("agSeaRate")} /></Field>
-          <Field label="AG Sea CBM price" hint="¥/CBM — default 6600"><TextInput type="number" value={draft.agSeaCbmPrice} onChange={set("agSeaCbmPrice")} /></Field>
-          <Field label="AG Air rate" hint="¥/kg — 145–200 range"><TextInput type="number" value={draft.agAirRate} onChange={set("agAirRate")} /></Field>
-          <Field label="Marlar Air rate" hint="¥/kg — 100–120 range"><TextInput type="number" value={draft.marlarRate} onChange={set("marlarRate")} /></Field>
-          <Field label="CX rate" hint="¥/kg — tiered, ~200 at 1kg / ~145 at 10kg+"><TextInput type="number" value={draft.cxRate} onChange={set("cxRate")} /></Field>
+          <Field label="RMB → MMK"><TextInput type="number" value={draft.rmbRate} onChange={set("rmbRate")} /></Field>
+          <Field label="USD → MMK"><TextInput type="number" value={draft.usdRate} onChange={set("usdRate")} /></Field>
         </div>
       </Card>
+
+      <LogisticsMethodsSection methods={draft.logisticsMethods || []} setMethods={(list) => setDraft((d) => ({ ...d, logisticsMethods: list }))} />
 
       <Card>
         <div className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: C.accent, fontFamily: FONT_BODY }}>Defaults for new products</div>
@@ -1448,11 +2074,12 @@ export default function App() {
   useEffect(() => {
     (async () => {
       if (!isSupabaseConfigured) {
-        const { products: p, orders: o, settings: s } = loadFromLocalStorage(DEFAULT_SETTINGS);
+        const { products: rawP, orders: o, settings: s } = loadFromLocalStorage(DEFAULT_SETTINGS);
+        const p = rawP.map((prod) => normalizeProductLogistics(prod, s.logisticsMethods));
         setSettingsState(s);
         setProducts(p);
         setOrders(o);
-        try { if (!localStorage.getItem("courtside_products_v2")) localStorage.setItem("courtside_products_v2", JSON.stringify(p)); } catch (e) { /* ignore */ }
+        try { localStorage.setItem("courtside_products_v2", JSON.stringify(p)); } catch (e) { /* ignore */ }
         setLoading(false);
         return;
       }
@@ -1482,14 +2109,22 @@ export default function App() {
           await supabase.from("settings").upsert({ id: "singleton", data: s, updated_at: now });
         }
 
+        const normalizedP = p.map((prod) => normalizeProductLogistics(prod, s.logisticsMethods));
+        if (JSON.stringify(normalizedP) !== JSON.stringify(p) && normalizedP.length) {
+          // Old logistics shape/ids from a previous version — push the upgraded shape back up.
+          const now = new Date().toISOString();
+          await supabase.from("products").upsert(normalizedP.map((x) => ({ id: x.id, data: x, updated_at: now })));
+        }
+
         setSettingsState(s);
-        setProducts(p);
+        setProducts(normalizedP);
         setOrders(o);
         setSyncStatus("synced");
       } catch (e) {
         // Cloud load failed (bad keys, table not created yet, offline, etc.) —
         // fall back to this browser's local copy so the app still works.
-        const { products: p, orders: o, settings: s } = loadFromLocalStorage(DEFAULT_SETTINGS);
+        const { products: rawP, orders: o, settings: s } = loadFromLocalStorage(DEFAULT_SETTINGS);
+        const p = rawP.map((prod) => normalizeProductLogistics(prod, s.logisticsMethods));
         setSettingsState(s);
         setProducts(p);
         setOrders(o);
@@ -1583,7 +2218,7 @@ export default function App() {
   const openProduct = (id) => {
     const p = products.find((x) => x.id === id);
     if (!p) return;
-    setDraftProduct({ ...p, logistics: { ...defaultAllLogistics(settings), ...p.logistics } });
+    setDraftProduct({ ...p, logistics: { ...defaultAllLogistics(settings.logisticsMethods), ...p.logistics } });
     setIsNewProduct(false);
     setPage("productDetail");
   };
@@ -1607,6 +2242,13 @@ export default function App() {
     persistProducts(products.filter((p) => p.id !== draftProduct.id));
     showToast("Product deleted");
     setPage("products");
+  };
+  const togglePostedTo = (productId, platformId) => {
+    persistProducts(products.map((p) => {
+      if (p.id !== productId) return p;
+      const cur = p.postedTo || [];
+      return { ...p, postedTo: cur.includes(platformId) ? cur.filter((x) => x !== platformId) : [...cur, platformId] };
+    }));
   };
 
   // ---- Order flow ----
@@ -1683,7 +2325,7 @@ export default function App() {
 
         {page === "dashboard" && <Dashboard products={products} orders={orders} settings={settings} goTo={goTo} openProduct={openProduct} openOrder={openOrder} />}
         {page === "addChoice" && <AddChoicePage onCatalog={chooseAddCatalog} onOrder={openNewOrderBlank} />}
-        {page === "products" && <ProductsPage products={products} settings={settings} openProduct={openProduct} goTo={goTo} />}
+        {page === "products" && <ProductsPage products={products} settings={settings} openProduct={openProduct} goTo={goTo} onTogglePosted={togglePostedTo} />}
         {page === "productDetail" && draftProduct && (
           <ProductDetailPage
             draft={draftProduct} setDraft={setDraftProduct} settings={settings}
@@ -1701,6 +2343,7 @@ export default function App() {
         )}
         {page === "analytics" && <AnalyticsPage products={products} orders={orders} settings={settings} />}
         {page === "settings" && <SettingsPage settings={settings} onSave={(s) => { persistSettings(s); showToast("Settings saved"); }} />}
+        {page === "socials" && <SocialsPage settings={settings} onSave={(s) => { persistSettings(s); showToast("Social links saved"); }} />}
       </main>
 
       {toast && (
